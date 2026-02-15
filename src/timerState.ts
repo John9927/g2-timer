@@ -75,6 +75,17 @@ export class TimerStateManager {
     }
   }
 
+  /** Imposta direttamente il preset (solo valori in PRESETS). */
+  setPreset(minutes: number): void {
+    if (PRESETS.includes(minutes as (typeof PRESETS)[number])) {
+      this.data.selectedPreset = minutes;
+      this.resetToPreset();
+      if (this.onStateChangeCallback) {
+        this.onStateChangeCallback();
+      }
+    }
+  }
+
   resetToPreset(): void {
     this.stopInterval();
     this.stopBlink();

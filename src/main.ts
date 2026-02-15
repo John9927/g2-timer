@@ -7,102 +7,151 @@ let bridge: any = null;
 let timerState: TimerStateManager | null = null;
 let isInitialized = false;
 let isInForeground = true;
-let debugLog: string[] = [];
-const MAX_DEBUG_LOG = 5; // Keep last 5 log messages
-
 function getStatoLabel(state: TimerState): string {
   switch (state) {
     case TimerState.IDLE:
-      return 'IN_ATTESA';
+      return 'In attesa';
     case TimerState.RUNNING:
-      return 'IN_CORSO';
+      return 'In corso';
     case TimerState.PAUSED:
-      return 'IN_PAUSA';
+      return 'In pausa';
     case TimerState.DONE:
-      return 'COMPLETATO';
+      return 'Completato';
     default:
       return state;
   }
 }
 
-// Debug logging function that shows on glasses display
-function debugLogToDisplay(message: string) {
-  const timestamp = new Date().toLocaleTimeString();
-  const logMessage = `[${timestamp}] ${message}`;
-  console.log(logMessage);
-  debugLog.push(logMessage);
-  if (debugLog.length > MAX_DEBUG_LOG) {
-    debugLog.shift();
-  }
-  // Update debug view in browser
-  updateDebugView();
-}
+function updateRemoteView() {
+  const remoteTime = document.getElementById('remote-time');
+  const remoteState = document.getElementById('remote-state');
+  const remoteStatus = document.getElementById('remote-status');
+  const btnStartPause = document.getElementById('btn-start-pause') as HTMLButtonElement | null;
+  const btnReset = document.getElementById('btn-reset') as HTMLButtonElement | null;
+  const presetButtons = document.querySelectorAll('#remote-preset-buttons .preset-btn');
 
-// Debug view functions for browser fallback
-function updateDebugView() {
-  const bridgeStatus = document.getElementById('bridge-status');
-  const timerDisplay = document.getElementById('timer-display');
-  const presetDisplay = document.getElementById('preset-display');
-  const stateDisplay = document.getElementById('state-display');
-  const containerStatus = document.getElementById('container-status');
-
-  if (bridgeStatus) {
-    bridgeStatus.textContent = bridge ? 'Connessione: attiva' : 'Connessione: in attesa...';
-    bridgeStatus.className = bridge ? 'debug-line success' : 'debug-line status';
+  const connected = !!(bridge && timerState);
+  if (remoteStatus) {
+    remoteStatus.textContent = connected
+      ? (isInitialized ? 'Connesso – display pronto' : 'Connesso – inizializzazione...')
+      : 'Connessione in attesa...';
+    remoteStatus.className = connected ? 'connected' : '';
   }
 
   if (timerState) {
-    if (timerDisplay) {
-      const mins = Math.floor(timerState.getRemainingSeconds() / 60);
-      const secs = timerState.getRemainingSeconds() % 60;
-      timerDisplay.textContent = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    const mins = Math.floor(timerState.getRemainingSeconds() / 60);
+    const secs = timerState.getRemainingSeconds() % 60;
+    const timeStr = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    if (remoteTime) remoteTime.textContent = timeStr;
+    if (remoteState) {
+      remoteState.textContent = getStatoLabel(timerState.getState());
+      remoteState.className = timerState.getState().toLowerCase();
     }
-    if (presetDisplay) {
-      presetDisplay.textContent = `Durata: ${timerState.getSelectedPreset()} min`;
-    }
-    if (stateDisplay) {
-      stateDisplay.textContent = `Stato: ${getStatoLabel(timerState.getState())}`;
-    }
-  }
 
-  if (containerStatus) {
-    containerStatus.textContent = isInitialized ? 'Container: creati' : 'Container: --';
-    containerStatus.className = isInitialized ? 'debug-line success' : 'debug-line';
+    const preset = timerState.getSelectedPreset();
+    presetButtons.forEach((btn) => {
+      const p = parseInt((btn as HTMLElement).dataset.preset || '', 10);
+      btn.classList.toggle('selected', p === preset);
+      (btn as HTMLButtonElement).disabled = !connected;
+    });
+
+    if (btnStartPause) {
+      btnStartPause.disabled = !connected;
+      const isRunning = timerState.getState() === TimerState.RUNNING;
+      btnStartPause.textContent = isRunning ? 'Pausa' : 'Avvia';
+      btnStartPause.classList.toggle('pause-mode', isRunning);
+    }
+    if (btnReset) btnReset.disabled = !connected;
+  } else {
+    if (remoteTime) remoteTime.textContent = '--:--';
+    if (remoteState) {
+      remoteState.textContent = 'Stato';
+      remoteState.className = 'idle';
+    }
+    presetButtons.forEach((btn) => {
+      btn.classList.remove('selected');
+      (btn as HTMLButtonElement).disabled = true;
+    });
+    if (btnStartPause) { btnStartPause.disabled = true; btnStartPause.textContent = 'Avvia'; }
+    if (btnReset) btnReset.disabled = true;
   }
-  
-  // Show debug logs in browser
-  const debugLogElement = document.getElementById('debug-logs');
-  if (debugLogElement) {
-    debugLogElement.innerHTML = debugLog.slice(-3).map(log => `<div class="debug-line" style="font-size: 12px; color: #888;">${log}</div>`).join('');
-  }
+}
+
+function setupRemoteControl() {
+  const btnStartPause = document.getElementById('btn-start-pause');
+  const btnReset = document.getElementById('btn-reset');
+  const presetButtons = document.querySelectorAll('#remote-preset-buttons .preset-btn');
+
+  btnStartPause?.addEventListener('click', () => {
+    if (!timerState || !bridge) return;
+    timerState.toggleStartPause();
+    renderUI(
+      bridge,
+      timerState.getState(),
+      timerState.getSelectedPreset(),
+      timerState.getRemainingSeconds(),
+      timerState.getBlinkVisibility()
+    ).catch((err) => console.error('Error rendering:', err));
+    updateRemoteView();
+  });
+
+  btnReset?.addEventListener('click', () => {
+    if (!timerState || !bridge) return;
+    timerState.resetToPreset();
+    renderUI(
+      bridge,
+      timerState.getState(),
+      timerState.getSelectedPreset(),
+      timerState.getRemainingSeconds(),
+      timerState.getBlinkVisibility()
+    ).catch((err) => console.error('Error rendering:', err));
+    updateRemoteView();
+  });
+
+  presetButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const minutes = parseInt((btn as HTMLElement).dataset.preset || '', 10);
+      if (!timerState || !bridge || !minutes) return;
+      timerState.setPreset(minutes);
+      renderUI(
+        bridge,
+        timerState.getState(),
+        timerState.getSelectedPreset(),
+        timerState.getRemainingSeconds(),
+        timerState.getBlinkVisibility()
+      ).catch((err) => console.error('Error rendering:', err));
+      updateRemoteView();
+    });
+  });
 }
 
 // Initialize the app
 async function init() {
   try {
-    updateDebugView(); // Initial debug view update
-    debugLogToDisplay('Inizializzazione bridge...');
+    updateRemoteView();
     bridge = await waitForEvenAppBridge();
-    debugLogToDisplay('Bridge ricevuto');
     console.log('[Boot] ✅ Bridge Even ricevuto');
     console.log('[Boot] 📊 Bridge disponibile:', !!bridge);
     if (bridge) {
       console.log('[Boot] 📊 Bridge methods:', Object.keys(bridge || {}));
     }
-    updateDebugView(); // Update after bridge connection
-    
+    updateRemoteView();
+
     if (!bridge) {
-      debugLogToDisplay('ERRORE: Bridge non disponibile!');
       console.error('[Boot] ❌ Bridge non disponibile!');
-      const bridgeStatus = document.getElementById('bridge-status');
-      if (bridgeStatus) {
-        bridgeStatus.textContent = 'Connessione: non disponibile';
-        bridgeStatus.className = 'debug-line error';
+      const remoteStatus = document.getElementById('remote-status');
+      if (remoteStatus) {
+        remoteStatus.textContent = 'Connessione non disponibile';
+        remoteStatus.className = 'error';
       }
+      timerState = new TimerStateManager();
+      setupRemoteControl();
+      updateRemoteView();
       return;
     }
 
     timerState = new TimerStateManager();
+    setupRemoteControl();
 
     // Set up update callback (called every second when running)
     timerState.setOnUpdate(async () => {
@@ -115,8 +164,7 @@ async function init() {
           timerState.getBlinkVisibility()
         );
       }
-      // Update debug view in browser
-      updateDebugView();
+      updateRemoteView();
     });
 
     // Set up state change callback (called when state changes)
@@ -130,81 +178,35 @@ async function init() {
           timerState.getBlinkVisibility()
         );
       }
-      // Update debug view in browser
-      updateDebugView();
+      updateRemoteView();
     });
 
     // Create page containers once - show preset selection initially
-    debugLogToDisplay('Creazione container...');
     const containersCreated = await createPageContainers(bridge, timerState.getSelectedPreset());
     if (!containersCreated) {
-      debugLogToDisplay('ERRORE: Creazione container fallita!');
       console.error('Failed to create page containers');
-      // Show error on glasses display
       if (bridge) {
         await renderUI(bridge, TimerState.IDLE, 5, 300, true, 'ERRORE: creazione container fallita');
       }
+      const remoteStatus = document.getElementById('remote-status');
+      if (remoteStatus) {
+        remoteStatus.textContent = 'Errore creazione display';
+        remoteStatus.className = 'error';
+      }
       return;
     }
-    debugLogToDisplay('Container creati OK');
 
-    // Both containers (text + image) are now created at startup.
-    // No delay needed – preset text is already set via createStartUpPageContainer.
-    debugLogToDisplay('Container creati, display pronto');
-
-    // Set up event handlers
     setupEventHandlers();
-
     isInitialized = true;
-    updateDebugView(); // Final update
-    
-    // Add click handlers for browser testing (fallback when bridge is not available)
-    if (!bridge) {
-      setupBrowserClickHandlers();
-    }
+    updateRemoteView();
   } catch (error) {
     console.error('Failed to initialize Even Hub app:', error);
-    const bridgeStatus = document.getElementById('bridge-status');
-    if (bridgeStatus) {
-      bridgeStatus.textContent = `Errore: ${error}`;
-      bridgeStatus.className = 'debug-line error';
+    const remoteStatus = document.getElementById('remote-status');
+    if (remoteStatus) {
+      remoteStatus.textContent = `Errore: ${error}`;
+      remoteStatus.className = 'error';
     }
   }
-}
-
-// Setup click handlers for browser testing (when bridge is not available)
-function setupBrowserClickHandlers() {
-  const debugContainer = document.getElementById('debug-container');
-  if (!debugContainer || !timerState) return;
-
-  let tapTimeout: number | null = null;
-  let tapCount = 0;
-
-  debugContainer.addEventListener('click', () => {
-    tapCount++;
-    
-    if (tapTimeout) {
-      clearTimeout(tapTimeout);
-    }
-    
-    tapTimeout = window.setTimeout(() => {
-      // Single tap: cycle preset
-      if (tapCount === 1) {
-        timerState?.cyclePreset();
-      }
-      // Double tap: start/pause
-      else if (tapCount === 2) {
-        timerState?.toggleStartPause();
-      }
-      // Triple tap: reset
-      else if (tapCount === 3) {
-        timerState?.resetToPreset();
-      }
-      
-      updateDebugView();
-      tapCount = 0;
-    }, 300);
-  });
 }
 
 // Swipe throttling to prevent rapid duplicate events
@@ -299,7 +301,7 @@ function setupEventHandlers() {
                 timerState.getBlinkVisibility()
               );
             }
-            updateDebugView();
+            updateRemoteView();
           }
         }
       }
@@ -316,8 +318,6 @@ async function handleSingleTap() {
   
   console.log('Single tap: start/pause timer');
   timerState.toggleStartPause();
-  debugLogToDisplay('Tocco: timer avviato/pausato');
-  
   await renderUI(
     bridge,
     timerState.getState(),
@@ -325,7 +325,7 @@ async function handleSingleTap() {
     timerState.getRemainingSeconds(),
     timerState.getBlinkVisibility()
   );
-  updateDebugView();
+  updateRemoteView();
 }
 
 // Handle swipe right: next preset (SCROLL_TOP_EVENT = 1)
@@ -341,8 +341,7 @@ async function handleSwipeRight() {
   lastSwipeTime = now;
   
   timerState.cyclePreset();
-  debugLogToDisplay('Scorrimento destra: preset successivo');
-  
+
   await renderUI(
     bridge,
     timerState.getState(),
@@ -350,7 +349,7 @@ async function handleSwipeRight() {
     timerState.getRemainingSeconds(),
     timerState.getBlinkVisibility()
   );
-  updateDebugView();
+  updateRemoteView();
 }
 
 // Handle swipe left: previous preset (SCROLL_BOTTOM_EVENT = 2)
@@ -366,8 +365,7 @@ async function handleSwipeLeft() {
   lastSwipeTime = now;
   
   timerState.cyclePresetBackward();
-  debugLogToDisplay('Scorrimento sinistra: preset precedente');
-  
+
   await renderUI(
     bridge,
     timerState.getState(),
@@ -375,7 +373,7 @@ async function handleSwipeLeft() {
     timerState.getRemainingSeconds(),
     timerState.getBlinkVisibility()
   );
-  updateDebugView();
+  updateRemoteView();
 }
 
 // Cleanup on page unload

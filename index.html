@@ -2,56 +2,215 @@
 <html lang="it">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <link rel="icon" href="data:," />
-    <title>Cronometro G2</title>
+    <title>Cronometro G2 – Controllo remoto</title>
     <style>
+      :root {
+        --bg: #0a0e14;
+        --panel: #131920;
+        --border: #2a3544;
+        --text: #e6e6e6;
+        --muted: #8b949e;
+        --accent: #58a6ff;
+        --accent-hover: #79b8ff;
+        --go: #3fb950;
+        --go-hover: #56d364;
+        --pause: #d29922;
+        --pause-hover: #e3b341;
+        --danger: #f85149;
+        --danger-hover: #ff7b72;
+      }
+      * {
+        box-sizing: border-box;
+      }
       body {
         margin: 0;
-        padding: 20px;
-        font-family: monospace;
-        background: #000;
-        color: #0f0;
+        padding: 16px;
+        font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+        background: var(--bg);
+        color: var(--text);
         display: flex;
         flex-direction: column;
         align-items: center;
         min-height: 100vh;
+        -webkit-tap-highlight-color: transparent;
       }
-      #debug-container {
-        width: 576px;
-        height: 288px;
-        border: 2px solid #0f0;
+      h1 {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: var(--muted);
+        margin: 0 0 12px 0;
+      }
+      #remote-container {
+        width: 100%;
+        max-width: 360px;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 16px;
         padding: 20px;
-        box-sizing: border-box;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+      }
+      /* Display come sugli occhiali */
+      #remote-display {
+        text-align: center;
+        padding: 24px 16px;
+        background: var(--bg);
+        border-radius: 12px;
+        border: 1px solid var(--border);
+      }
+      #remote-time {
+        font-size: 3rem;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        line-height: 1;
+        font-variant-numeric: tabular-nums;
+        color: var(--text);
+        margin: 0;
+        min-height: 1.1em;
+      }
+      #remote-state {
+        font-size: 0.9rem;
+        color: var(--muted);
+        margin-top: 8px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+      #remote-state.running { color: var(--go); }
+      #remote-state.paused { color: var(--pause); }
+      #remote-state.done { color: var(--danger); }
+      /* Preset */
+      #remote-preset-section {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      #remote-preset-section label {
+        font-size: 0.85rem;
+        color: var(--muted);
+      }
+      #remote-preset-buttons {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .preset-btn {
+        flex: 1 1 calc(25% - 6px);
+        min-width: 60px;
+        padding: 12px 8px;
+        font-size: 1rem;
+        font-weight: 600;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--panel);
+        color: var(--text);
+        cursor: pointer;
+        transition: background 0.15s, border-color 0.15s, color 0.15s;
+      }
+      .preset-btn:hover, .preset-btn:active {
+        background: var(--border);
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .preset-btn.selected {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: var(--bg);
+      }
+      .preset-btn.selected:hover, .preset-btn.selected:active {
+        background: var(--accent-hover);
+        border-color: var(--accent-hover);
+        color: var(--bg);
+      }
+      .preset-btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+      /* Azioni principali */
+      #remote-actions {
         display: flex;
         flex-direction: column;
         gap: 10px;
       }
-      .debug-line {
-        font-size: 16px;
-        line-height: 1.5;
+      .action-row {
+        display: flex;
+        gap: 10px;
       }
-      .status {
-        color: #ff0;
+      .action-row button {
+        flex: 1;
+        padding: 16px;
+        font-size: 1rem;
+        font-weight: 600;
+        border: none;
+        border-radius: 12px;
+        cursor: pointer;
+        transition: filter 0.15s, transform 0.05s;
       }
-      .error {
-        color: #f00;
+      .action-row button:active {
+        transform: scale(0.98);
       }
-      .success {
-        color: #0f0;
+      .action-row button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        transform: none;
       }
+      #btn-start-pause {
+        background: var(--go);
+        color: #fff;
+      }
+      #btn-start-pause:hover:not(:disabled) {
+        filter: brightness(1.1);
+      }
+      #btn-start-pause.pause-mode {
+        background: var(--pause);
+        color: #000;
+      }
+      #btn-reset {
+        background: var(--danger);
+        color: #fff;
+      }
+      #btn-reset:hover:not(:disabled) {
+        filter: brightness(1.1);
+      }
+      #remote-status {
+        font-size: 0.75rem;
+        color: var(--muted);
+        text-align: center;
+        padding-top: 8px;
+        border-top: 1px solid var(--border);
+      }
+      #remote-status.connected { color: var(--go); }
+      #remote-status.error { color: var(--danger); }
     </style>
   </head>
   <body>
-    <div id="app"></div>
-    <div id="debug-container">
-      <div class="debug-line">Cronometro G2 - Vista debug</div>
-      <div class="debug-line status" id="bridge-status">Connessione: in attesa...</div>
-      <div class="debug-line" id="timer-display">--:--</div>
-      <div class="debug-line" id="preset-display">Durata: 1 3 5 10 15 30 60</div>
-      <div class="debug-line" id="state-display">Stato: --</div>
-      <div class="debug-line" id="container-status">Container: --</div>
-      <div id="debug-logs" style="margin-top: 10px; border-top: 1px solid #0f0; padding-top: 10px;"></div>
+    <h1>Cronometro G2 – Controllo remoto</h1>
+    <div id="remote-container">
+      <div id="remote-display">
+        <p id="remote-time">--:--</p>
+        <p id="remote-state" class="idle">Stato</p>
+      </div>
+      <div id="remote-preset-section">
+        <label>Durata (minuti)</label>
+        <div id="remote-preset-buttons">
+          <button type="button" class="preset-btn" data-preset="1">1</button>
+          <button type="button" class="preset-btn" data-preset="3">3</button>
+          <button type="button" class="preset-btn" data-preset="5">5</button>
+          <button type="button" class="preset-btn" data-preset="10">10</button>
+          <button type="button" class="preset-btn" data-preset="15">15</button>
+          <button type="button" class="preset-btn" data-preset="30">30</button>
+          <button type="button" class="preset-btn" data-preset="60">60</button>
+        </div>
+      </div>
+      <div id="remote-actions">
+        <div class="action-row">
+          <button type="button" id="btn-start-pause" disabled>Avvia</button>
+          <button type="button" id="btn-reset" disabled>Annulla / Reset</button>
+        </div>
+      </div>
+      <p id="remote-status">Connessione in attesa...</p>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
