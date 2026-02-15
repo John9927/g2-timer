@@ -212,33 +212,24 @@ export function resetPreviousTexts(): void {
 
 function buildPresetContent(selectedPreset: number): string {
   const minutes = String(Math.min(99, Math.max(0, selectedPreset))).padStart(2, '0');
-  const leftPattern = DIGIT_PATTERNS[minutes[0]];
-  const rightPattern = DIGIT_PATTERNS[minutes[1]];
-  const artLines: string[] = [];
+  const rowA = [1, 3, 5, 10]
+    .map((preset) => (preset === selectedPreset ? `[${preset}]` : `${preset}`))
+    .join('  ');
+  const rowB = [15, 30, 60]
+    .map((preset) => (preset === selectedPreset ? `[${preset}]` : `${preset}`))
+    .join('  ');
 
-  if (leftPattern && rightPattern) {
-    for (let row = 0; row < leftPattern.length; row++) {
-      const left = leftPattern[row].map((pixel) => (pixel ? '##' : '  ')).join('');
-      const right = rightPattern[row].map((pixel) => (pixel ? '##' : '  ')).join('');
-      artLines.push(`${left}    ${right}`);
-    }
-  }
-
-  const presetLine = PRESETS.map((preset) => (preset === selectedPreset ? `[${preset}]` : `${preset}`)).join('  ');
-
+  // Keep this screen compact to avoid text-container scrolling on G2.
   return [
-    'TIMER G2',
+    'Timer G2',
     '',
-    'Scegli i minuti',
+    `Minuti: ${minutes}`,
     '',
-    ...artLines,
+    rowA,
+    rowB,
     '',
-    `Preset: ${minutes} min`,
-    '',
-    presetLine,
-    '',
-    'Scorri per cambiare',
-    'Tocca per avviare',
+    'Scorri: cambia',
+    'Tocca: avvia',
   ].join('\n');
 }
 
