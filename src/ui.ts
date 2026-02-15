@@ -139,20 +139,6 @@ function pushImage(bridge: any, seconds: number, status?: string) {
     .catch(() => { imageUpdateInProgress = false; });
 }
 
-/** Send a tiny 1×1 black pixel to "erase" the image container quickly. */
-function clearImage(bridge: any) {
-  const tiny = document.createElement('canvas');
-  tiny.width = 1; tiny.height = 1;
-  const x = tiny.getContext('2d');
-  if (!x) return;
-  x.fillStyle = '#000';
-  x.fillRect(0, 0, 1, 1);
-  bridge.updateImageRawData({
-    containerID: 2,
-    containerName: 'timer-img',
-    imageData: toBytes(tiny.toDataURL('image/png')),
-  }).catch(() => {});
-}
 
 /* ─── public renderUI dispatcher ──────────────────────────────────────── */
 
@@ -171,21 +157,50 @@ export async function renderUI(
 
     /* ── IDLE → show preset selection ── */
     if (state === TimerState.IDLE) {
-      pushText(bridge, buildPresetContent(selectedPreset));
-      // Clear the timer image so old digits don't bleed through
-      if (currentScreenType === 'timer') clearImage(bridge);
-      currentScreenType = 'preset';
+      // If we're coming from timer screen, rebuild to preset (text-only)
+      if (currentScreenType === 'timer') {
+        const content = buildPresetContent(selectedPreset);
+        const textContainer: any = {
+          xPosition: 0,
+          yPosition: 0,
+          width: 576,
+          height: 288,
+          borderWidth: 0,
+          borderColor: 0,
+          paddingLength: 20,
+          containerID: 1,
+          containerName: 'timer-main',
+          content,
+          isEventCapture: 1,
+        };
+        await bridge.rebuildPageContainer({
+          containerTotalNum: 1,
+          textObject: [textContainer],
+        });
+        currentScreenType = 'preset';
+      } else {
+        // Already on preset screen, just update text
+        pushText(bridge, buildPresetContent(selectedPreset));
+      }
       return;
     }
 
     /* ── RUNNING / PAUSED / DONE → show timer ── */
+    // If not on timer screen yet, rebuild ONCE to add image container
+    if (currentScreenType !== 'timer') {
+      let status: string | undefined;
+      if (state === TimerState.PAUSED) status = 'PAUSED';
+      else if (state === TimerState.DONE && isBlinkingVisible) status = 'COMPLETATO';
+      await switchToTimerScreen(bridge, state, remainingSeconds, status);
+      return;
+    }
+
+    // Already on timer screen – just update text status and image
     let imgStatus: string | undefined;
-    // Use a single space so no visible text appears behind the image
     let txt = ' ';
 
     if (state === TimerState.PAUSED) {
       imgStatus = 'PAUSED';
-      // Push status text below the image area (8 newlines ≈ 160 px)
       txt = '\n\n\n\n\n\n\n\n       PAUSED';
     } else if (state === TimerState.DONE && isBlinkingVisible) {
       imgStatus = 'COMPLETATO';
@@ -194,7 +209,6 @@ export async function renderUI(
 
     pushText(bridge, txt);
     pushImage(bridge, remainingSeconds, imgStatus);
-    currentScreenType = 'timer';
   } catch (e) {
     console.error('renderUI error:', e);
   }
@@ -203,10 +217,10 @@ export async function renderUI(
 /* ─── initial container creation ──────────────────────────────────────── */
 
 /**
- * Creates BOTH the text container AND the image container at startup.
- * This way we NEVER need rebuildPageContainer – switching between preset
- * and timer screens is just a matter of updating existing containers,
- * which is dramatically faster over BLE.
+ * Creates ONLY the text container at startup (SDK limitation: image containers
+ * cannot be created with createStartUpPageContainer).
+ * When switching to timer mode, we use rebuildPageContainer ONCE to add the
+ * image container, then update only the image data (no more rebuilds).
  */
 export async function createPageContainers(
   bridge: any,
@@ -231,24 +245,10 @@ export async function createPageContainers(
       isEventCapture: 1,
     };
 
-    // Image container – centred on screen (200×100 is the SDK max)
-    // At startup it has no data → shows black → transparent on G2
-    const imageContainer: any = {
-      xPosition: 188,   // (576 − 200) / 2
-      yPosition: 40,
-      width: 200,
-      height: 100,
-      borderWidth: 0,
-      borderColor: 0,
-      containerID: 2,
-      containerName: 'timer-img',
-    };
-
-    console.log('[Boot] Creating containers (text + image)…');
+    console.log('[Boot] Creating text container…');
     const result = await bridge.createStartUpPageContainer({
-      containerTotalNum: 2,
+      containerTotalNum: 1,
       textObject: [textContainer],
-      imageObject: [imageContainer],
     });
     console.log('[Boot] Result:', result);
 
@@ -259,7 +259,7 @@ export async function createPageContainers(
       result === 'success';
 
     if (ok) {
-      console.log('[Boot] Containers created OK');
+      console.log('[Boot] Container created OK');
       currentScreenType = 'preset';
     } else {
       console.error('[Boot] Container creation failed:', result);
@@ -269,5 +269,76 @@ export async function createPageContainers(
   } catch (e) {
     console.error('createPageContainers error:', e);
     return false;
+  }
+}
+
+/**
+ * Switch to timer screen: rebuild with text + image containers.
+ * Called ONCE when transitioning from preset to timer.
+ */
+async function switchToTimerScreen(
+  bridge: any,
+  state: TimerState,
+  remainingSeconds: number,
+  status?: string,
+): Promise<void> {
+  if (!bridge) return;
+
+  try {
+    // Text container – thin strip at bottom for status + event capture
+    let statusText = ' ';
+    if (state === TimerState.PAUSED) {
+      statusText = '\n\n\n\n\n\n\n\n       PAUSED';
+    } else if (state === TimerState.DONE) {
+      statusText = '\n\n\n\n\n\n\n\n     COMPLETATO';
+    }
+
+    const textContainer: any = {
+      xPosition: 0,
+      yPosition: 180,
+      width: 576,
+      height: 108,
+      borderWidth: 0,
+      borderColor: 0,
+      paddingLength: 0,
+      containerID: 1,
+      containerName: 'timer-main',
+      content: statusText,
+      isEventCapture: 1,
+    };
+
+    // Image container – centered for large timer display
+    const imageContainer: any = {
+      xPosition: 188,
+      yPosition: 40,
+      width: 200,
+      height: 100,
+      borderWidth: 0,
+      borderColor: 0,
+      containerID: 2,
+      containerName: 'timer-img',
+    };
+
+    console.log('[UI] Rebuilding to timer screen (one-time)');
+    await bridge.rebuildPageContainer({
+      containerTotalNum: 2,
+      textObject: [textContainer],
+      imageObject: [imageContainer],
+    });
+    currentScreenType = 'timer';
+
+    // Small delay to ensure container is ready, then push image immediately
+    await new Promise(resolve => setTimeout(resolve, 50));
+    
+    const url = renderTimerImage(remainingSeconds, status);
+    if (url) {
+      bridge.updateImageRawData({
+        containerID: 2,
+        containerName: 'timer-img',
+        imageData: toBytes(url),
+      }).catch((err: any) => console.error('[UI] Error sending initial image:', err));
+    }
+  } catch (e) {
+    console.error('[UI] Error switching to timer screen:', e);
   }
 }
