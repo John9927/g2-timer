@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" href="data:," />
-    <title>G2 Timer</title>
+    <title>Cronometro G2</title>
     <style>
       body {
         margin: 0;
@@ -45,12 +45,12 @@
   <body>
     <div id="app"></div>
     <div id="debug-container">
-      <div class="debug-line">G2 Timer - Debug View</div>
-      <div class="debug-line status" id="bridge-status">Waiting for bridge...</div>
+      <div class="debug-line">Cronometro G2 - Vista debug</div>
+      <div class="debug-line status" id="bridge-status">Connessione: in attesa...</div>
       <div class="debug-line" id="timer-display">--:--</div>
-      <div class="debug-line" id="preset-display">Presets: 1 3 5 10 15 30 60</div>
-      <div class="debug-line" id="state-display">State: --</div>
-      <div class="debug-line" id="container-status">Containers: --</div>
+      <div class="debug-line" id="preset-display">Durata: 1 3 5 10 15 30 60</div>
+      <div class="debug-line" id="state-display">Stato: --</div>
+      <div class="debug-line" id="container-status">Container: --</div>
       <div id="debug-logs" style="margin-top: 10px; border-top: 1px solid #0f0; padding-top: 10px;"></div>
     </div>
     <script type="module" src="/src/main.ts"></script>

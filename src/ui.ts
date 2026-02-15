@@ -221,7 +221,7 @@ function buildPresetContent(selectedPreset: number): string {
 
   // Keep this screen compact to avoid text-container scrolling on G2.
   return [
-    'Timer G2',
+    'Cronometro G2',
     '',
     `Minuti: ${minutes}`,
     '',

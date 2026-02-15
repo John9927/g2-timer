@@ -32,7 +32,7 @@ function updateDebugView() {
   const containerStatus = document.getElementById('container-status');
 
   if (bridgeStatus) {
-    bridgeStatus.textContent = bridge ? 'Bridge: Connected ✓' : 'Bridge: Waiting...';
+    bridgeStatus.textContent = bridge ? 'Connessione: attiva' : 'Connessione: in attesa...';
     bridgeStatus.className = bridge ? 'debug-line success' : 'debug-line status';
   }
 
@@ -43,15 +43,15 @@ function updateDebugView() {
       timerDisplay.textContent = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
     }
     if (presetDisplay) {
-      presetDisplay.textContent = `Preset: ${timerState.getSelectedPreset()} min`;
+      presetDisplay.textContent = `Durata: ${timerState.getSelectedPreset()} min`;
     }
     if (stateDisplay) {
-      stateDisplay.textContent = `State: ${timerState.getState()}`;
+      stateDisplay.textContent = `Stato: ${timerState.getState()}`;
     }
   }
 
   if (containerStatus) {
-    containerStatus.textContent = isInitialized ? 'Containers: Created ✓' : 'Containers: --';
+    containerStatus.textContent = isInitialized ? 'Container: creati' : 'Container: --';
     containerStatus.className = isInitialized ? 'debug-line success' : 'debug-line';
   }
   
@@ -81,7 +81,7 @@ async function init() {
       console.error('[Boot] ❌ Bridge non disponibile!');
       const bridgeStatus = document.getElementById('bridge-status');
       if (bridgeStatus) {
-        bridgeStatus.textContent = 'Bridge: Not available ❌';
+        bridgeStatus.textContent = 'Connessione: non disponibile';
         bridgeStatus.className = 'debug-line error';
       }
       return;
@@ -127,7 +127,7 @@ async function init() {
       console.error('Failed to create page containers');
       // Show error on glasses display
       if (bridge) {
-        await renderUI(bridge, TimerState.IDLE, 5, 300, true, 'ERR: Container creation failed');
+        await renderUI(bridge, TimerState.IDLE, 5, 300, true, 'ERRORE: creazione container fallita');
       }
       return;
     }
@@ -151,7 +151,7 @@ async function init() {
     console.error('Failed to initialize Even Hub app:', error);
     const bridgeStatus = document.getElementById('bridge-status');
     if (bridgeStatus) {
-      bridgeStatus.textContent = `Error: ${error}`;
+      bridgeStatus.textContent = `Errore: ${error}`;
       bridgeStatus.className = 'debug-line error';
     }
   }
@@ -301,7 +301,7 @@ async function handleSingleTap() {
   
   console.log('Single tap: start/pause timer');
   timerState.toggleStartPause();
-  debugLogToDisplay('Tap: timer toggled');
+  debugLogToDisplay('Tocco: timer avviato/pausato');
   
   await renderUI(
     bridge,
@@ -326,7 +326,7 @@ async function handleSwipeRight() {
   lastSwipeTime = now;
   
   timerState.cyclePreset();
-  debugLogToDisplay('Swipe right: next preset');
+  debugLogToDisplay('Scorrimento destra: preset successivo');
   
   await renderUI(
     bridge,
@@ -351,7 +351,7 @@ async function handleSwipeLeft() {
   lastSwipeTime = now;
   
   timerState.cyclePresetBackward();
-  debugLogToDisplay('Swipe left: previous preset');
+  debugLogToDisplay('Scorrimento sinistra: preset precedente');
   
   await renderUI(
     bridge,
@@ -379,3 +379,4 @@ window.addEventListener('beforeunload', () => {
 
 // Start the app
 init();
+
