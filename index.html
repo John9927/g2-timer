@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="it">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <link rel="icon" href="data:," />
-    <title>Cronometro G2 – Controllo remoto</title>
+    <title>G2 Timer – Remote control</title>
     <style>
       :root {
         --bg: #0a0e14;
@@ -53,7 +53,7 @@
         flex-direction: column;
         gap: 20px;
       }
-      /* Display come sugli occhiali */
+      /* Display as on glasses */
       #remote-display {
         text-align: center;
         padding: 24px 16px;
@@ -128,7 +128,7 @@
         opacity: 0.6;
         cursor: not-allowed;
       }
-      /* Azioni principali */
+      /* Main actions */
       #remote-actions {
         display: flex;
         flex-direction: column;
@@ -186,14 +186,14 @@
     </style>
   </head>
   <body>
-    <h1>Cronometro G2 – Controllo remoto</h1>
+    <h1>G2 Timer – Remote control</h1>
     <div id="remote-container">
       <div id="remote-display">
         <p id="remote-time">--:--</p>
-        <p id="remote-state" class="idle">Stato</p>
+        <p id="remote-state" class="idle">Status</p>
       </div>
       <div id="remote-preset-section">
-        <label>Durata (minuti)</label>
+        <label>Duration (minutes)</label>
         <div id="remote-preset-buttons">
           <button type="button" class="preset-btn" data-preset="1">1</button>
           <button type="button" class="preset-btn" data-preset="3">3</button>
@@ -206,11 +206,11 @@
       </div>
       <div id="remote-actions">
         <div class="action-row">
-          <button type="button" id="btn-start-pause" disabled>Avvia</button>
-          <button type="button" id="btn-reset" disabled>Annulla / Reset</button>
+          <button type="button" id="btn-start-pause" disabled>Start</button>
+          <button type="button" id="btn-reset" disabled>Cancel / Reset</button>
         </div>
       </div>
-      <p id="remote-status">Connessione in attesa...</p>
+      <p id="remote-status">Connecting...</p>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

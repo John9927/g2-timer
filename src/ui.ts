@@ -221,24 +221,24 @@ function buildPresetContent(selectedPreset: number): string {
 
   // Keep this screen compact to avoid text-container scrolling on G2.
   return [
-    'Cronometro G2',
+    'G2 Timer',
     '',
-    `Minuti: ${minutes}`,
+    `Minutes: ${minutes}`,
     '',
     rowA,
     rowB,
     '',
-    'Scorri: cambia',
-    'Tocca: avvia',
+    'Swipe: change',
+    'Tap: start',
   ].join('\n');
 }
 
 function buildTimerOverlayText(state: TimerState, isBlinkingVisible: boolean): string {
   if (state === TimerState.PAUSED) {
-    return 'PAUSA';
+    return 'PAUSED';
   }
   if (state === TimerState.DONE) {
-    return isBlinkingVisible ? 'COMPLETATO' : ' ';
+    return isBlinkingVisible ? 'DONE' : ' ';
   }
   return ' ';
 }

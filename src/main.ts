@@ -26,16 +26,16 @@ function clearRemoteStartPending() {
   remoteStartScheduledAt = null;
 }
 
-function getStatoLabel(state: TimerState): string {
+function getStateLabel(state: TimerState): string {
   switch (state) {
     case TimerState.IDLE:
-      return 'In attesa';
+      return 'Idle';
     case TimerState.RUNNING:
-      return 'In corso';
+      return 'Running';
     case TimerState.PAUSED:
-      return 'In pausa';
+      return 'Paused';
     case TimerState.DONE:
-      return 'Completato';
+      return 'Done';
     default:
       return state;
   }
@@ -52,8 +52,8 @@ function updateRemoteView() {
   const connected = !!(bridge && timerState);
   if (remoteStatus) {
     remoteStatus.textContent = connected
-      ? (isInitialized ? 'Connesso – display pronto' : 'Connesso – inizializzazione...')
-      : 'Connessione in attesa...';
+      ? (isInitialized ? 'Connected – display ready' : 'Connected – initializing...')
+      : 'Connecting...';
     remoteStatus.className = connected ? 'connected' : '';
   }
 
@@ -67,10 +67,10 @@ function updateRemoteView() {
     if (remoteState) {
       if (isPendingStart) {
         const remaining = Math.ceil((REMOTE_START_DELAY_MS - (Date.now() - remoteStartScheduledAt!)) / 1000);
-        remoteState.textContent = remaining > 0 ? `Avvio tra ${remaining}…` : 'Avvio…';
+        remoteState.textContent = remaining > 0 ? `Starting in ${remaining}…` : 'Starting…';
         remoteState.className = 'running';
       } else {
-        remoteState.textContent = getStatoLabel(timerState.getState());
+        remoteState.textContent = getStateLabel(timerState.getState());
         remoteState.className = timerState.getState().toLowerCase();
       }
     }
@@ -86,10 +86,10 @@ function updateRemoteView() {
       btnStartPause.disabled = !connected;
       const isRunning = timerState.getState() === TimerState.RUNNING;
       if (isPendingStart) {
-        btnStartPause.textContent = 'Attendere…';
+        btnStartPause.textContent = 'Please wait…';
         btnStartPause.classList.remove('pause-mode');
       } else {
-        btnStartPause.textContent = isRunning ? 'Pausa' : 'Avvia';
+        btnStartPause.textContent = isRunning ? 'Pause' : 'Start';
         btnStartPause.classList.toggle('pause-mode', isRunning);
       }
     }
@@ -97,14 +97,14 @@ function updateRemoteView() {
   } else {
     if (remoteTime) remoteTime.textContent = '--:--';
     if (remoteState) {
-      remoteState.textContent = 'Stato';
+      remoteState.textContent = 'Status';
       remoteState.className = 'idle';
     }
     presetButtons.forEach((btn) => {
       btn.classList.remove('selected');
       (btn as HTMLButtonElement).disabled = true;
     });
-    if (btnStartPause) { btnStartPause.disabled = true; btnStartPause.textContent = 'Avvia'; }
+    if (btnStartPause) { btnStartPause.disabled = true; btnStartPause.textContent = 'Start'; }
     if (btnReset) btnReset.disabled = true;
   }
 }
@@ -203,18 +203,18 @@ async function init() {
   try {
     updateRemoteView();
     bridge = await waitForEvenAppBridge();
-    console.log('[Boot] ✅ Bridge Even ricevuto');
-    console.log('[Boot] 📊 Bridge disponibile:', !!bridge);
+    console.log('[Boot] ✅ Bridge received');
+    console.log('[Boot] 📊 Bridge available:', !!bridge);
     if (bridge) {
       console.log('[Boot] 📊 Bridge methods:', Object.keys(bridge || {}));
     }
     updateRemoteView();
 
     if (!bridge) {
-      console.error('[Boot] ❌ Bridge non disponibile!');
+      console.error('[Boot] ❌ Bridge not available!');
       const remoteStatus = document.getElementById('remote-status');
       if (remoteStatus) {
-        remoteStatus.textContent = 'Connessione non disponibile';
+        remoteStatus.textContent = 'Connection unavailable';
         remoteStatus.className = 'error';
       }
       timerState = new TimerStateManager();
@@ -259,11 +259,11 @@ async function init() {
     if (!containersCreated) {
       console.error('Failed to create page containers');
       if (bridge) {
-        await renderUI(bridge, TimerState.IDLE, 5, 300, true, 'ERRORE: creazione container fallita');
+        await renderUI(bridge, TimerState.IDLE, 5, 300, true, 'ERROR: container creation failed');
       }
       const remoteStatus = document.getElementById('remote-status');
       if (remoteStatus) {
-        remoteStatus.textContent = 'Errore creazione display';
+        remoteStatus.textContent = 'Display creation error';
         remoteStatus.className = 'error';
       }
       return;
@@ -276,7 +276,7 @@ async function init() {
     console.error('Failed to initialize Even Hub app:', error);
     const remoteStatus = document.getElementById('remote-status');
     if (remoteStatus) {
-      remoteStatus.textContent = `Errore: ${error}`;
+      remoteStatus.textContent = `Error: ${error}`;
       remoteStatus.className = 'error';
     }
   }
