@@ -13,22 +13,22 @@ const DISPLAY_HEIGHT = 288;
 
 const TEXT_CONTAINER_ID = 1;
 const MM_CONTAINER_ID = 2;
-const SC_CONTAINER_ID = 3; // ":SS" block
+const SC_CONTAINER_ID = 3; // "SS" block
 
 const TEXT_CONTAINER_NAME = 'timer-text';
 const MM_CONTAINER_NAME = 'timer-mm';
 const SC_CONTAINER_NAME = 'timer-sc';
 
-const DIGIT_SCALE = 13;
+const DIGIT_SCALE = 11;
 const DIGIT_BASE_WIDTH = 5;
 const DIGIT_BASE_HEIGHT = 7;
 const GAP_BASE = 1;
 const COLON_BASE_WIDTH = 3;
 
-const DIGIT_WIDTH = DIGIT_BASE_WIDTH * DIGIT_SCALE; // 65
-const DIGIT_HEIGHT = DIGIT_BASE_HEIGHT * DIGIT_SCALE; // 91
-const MM_WIDTH = (DIGIT_BASE_WIDTH * 2 + GAP_BASE) * DIGIT_SCALE; // 143
-const SC_WIDTH = (COLON_BASE_WIDTH + GAP_BASE + DIGIT_BASE_WIDTH + GAP_BASE + DIGIT_BASE_WIDTH) * DIGIT_SCALE; // 195
+const DIGIT_WIDTH = DIGIT_BASE_WIDTH * DIGIT_SCALE;
+const DIGIT_HEIGHT = DIGIT_BASE_HEIGHT * DIGIT_SCALE;
+const MM_WIDTH = (DIGIT_BASE_WIDTH * 2 + GAP_BASE + COLON_BASE_WIDTH) * DIGIT_SCALE; // "MM:"
+const SC_WIDTH = (DIGIT_BASE_WIDTH + GAP_BASE + DIGIT_BASE_WIDTH) * DIGIT_SCALE; // "SS"
 
 const TIMER_GROUP_GAP = 12;
 const TOTAL_TIMER_WIDTH = MM_WIDTH + TIMER_GROUP_GAP + SC_WIDTH;
@@ -291,9 +291,13 @@ async function getMinutesPngBytes(minutes: string): Promise<number[]> {
     return [];
   }
 
+  const rightX = (DIGIT_BASE_WIDTH + GAP_BASE) * DIGIT_SCALE;
+  const colonX = (DIGIT_BASE_WIDTH + GAP_BASE + DIGIT_BASE_WIDTH + GAP_BASE) * DIGIT_SCALE;
+
   const bytes = await renderPng(MM_WIDTH, DIGIT_HEIGHT, (drawCtx) => {
     drawPattern(drawCtx, left, 0, 0, DIGIT_SCALE);
-    drawPattern(drawCtx, right, (DIGIT_BASE_WIDTH + GAP_BASE) * DIGIT_SCALE, 0, DIGIT_SCALE);
+    drawPattern(drawCtx, right, rightX, 0, DIGIT_SCALE);
+    drawPattern(drawCtx, COLON_PATTERN, colonX, 0, DIGIT_SCALE);
   });
 
   if (bytes.length > 0) {
@@ -314,12 +318,10 @@ async function getSecondsBlockPngBytes(seconds: string): Promise<number[]> {
     return [];
   }
 
-  const tensX = (COLON_BASE_WIDTH + GAP_BASE) * DIGIT_SCALE;
-  const onesX = (COLON_BASE_WIDTH + GAP_BASE + DIGIT_BASE_WIDTH + GAP_BASE) * DIGIT_SCALE;
+  const onesX = (DIGIT_BASE_WIDTH + GAP_BASE) * DIGIT_SCALE;
 
   const bytes = await renderPng(SC_WIDTH, DIGIT_HEIGHT, (drawCtx) => {
-    drawPattern(drawCtx, COLON_PATTERN, 0, 0, DIGIT_SCALE);
-    drawPattern(drawCtx, tens, tensX, 0, DIGIT_SCALE);
+    drawPattern(drawCtx, tens, 0, 0, DIGIT_SCALE);
     drawPattern(drawCtx, ones, onesX, 0, DIGIT_SCALE);
   });
 
@@ -374,8 +376,10 @@ function pushText(bridge: any, content: string, force = false): void {
 }
 
 function queueLatestTimerUpdate(bridge: any, remainingSeconds: number, forceAll: boolean): void {
-  pendingTimerBridge = bridge;
-  pendingTimerSeconds = remainingSeconds;
+  if (pendingTimerSeconds === null) {
+    pendingTimerBridge = bridge;
+    pendingTimerSeconds = remainingSeconds;
+  }
   pendingTimerForceAll = pendingTimerForceAll || forceAll;
 }
 
@@ -437,10 +441,11 @@ async function updateTimerImages(bridge: any, remainingSeconds: number, forceAll
   try {
     await applyTimerImages(bridge, remainingSeconds, forceAll);
 
-    // Apply only one queued update to avoid stale catch-up chains.
-    const queued = consumeQueuedTimerUpdate();
-    if (queued) {
+    // Drain queued updates in order to avoid stale frames being applied later.
+    let queued = consumeQueuedTimerUpdate();
+    while (queued) {
       await applyTimerImages(queued.bridge, queued.remainingSeconds, queued.forceAll);
+      queued = consumeQueuedTimerUpdate();
     }
   } catch (error) {
     console.error('[UI] Failed to update timer images:', error);
