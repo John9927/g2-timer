@@ -228,6 +228,7 @@ async function init() {
 
     // Set up update callback (called every second when running)
     timerState.setOnUpdate(async () => {
+      updateRemoteView(); // Update phone first so it matches what we send to glasses
       if (isInForeground && bridge && timerState) {
         await renderUI(
           bridge,
@@ -237,11 +238,11 @@ async function init() {
           timerState.getBlinkVisibility()
         );
       }
-      updateRemoteView();
     });
 
     // Set up state change callback (called when state changes)
     timerState.setOnStateChange(async () => {
+      updateRemoteView(); // Update phone first so it matches what we send to glasses
       if (isInForeground && bridge && timerState) {
         await renderUI(
           bridge,
@@ -251,7 +252,6 @@ async function init() {
           timerState.getBlinkVisibility()
         );
       }
-      updateRemoteView();
     });
 
     // Create page containers once - show preset selection initially
