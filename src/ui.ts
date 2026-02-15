@@ -13,15 +13,13 @@ const DISPLAY_HEIGHT = 288;
 
 const TEXT_CONTAINER_ID = 1;
 const MM_CONTAINER_ID = 2;
-const ST_CONTAINER_ID = 3; // colon + second tens
-const SO_CONTAINER_ID = 4; // second ones
+const SC_CONTAINER_ID = 3; // ":SS" block
 
 const TEXT_CONTAINER_NAME = 'timer-text';
 const MM_CONTAINER_NAME = 'timer-mm';
-const ST_CONTAINER_NAME = 'timer-st';
-const SO_CONTAINER_NAME = 'timer-so';
+const SC_CONTAINER_NAME = 'timer-sc';
 
-const DIGIT_SCALE = 13; // large but lighter than previous scale
+const DIGIT_SCALE = 13;
 const DIGIT_BASE_WIDTH = 5;
 const DIGIT_BASE_HEIGHT = 7;
 const GAP_BASE = 1;
@@ -30,14 +28,13 @@ const COLON_BASE_WIDTH = 3;
 const DIGIT_WIDTH = DIGIT_BASE_WIDTH * DIGIT_SCALE; // 65
 const DIGIT_HEIGHT = DIGIT_BASE_HEIGHT * DIGIT_SCALE; // 91
 const MM_WIDTH = (DIGIT_BASE_WIDTH * 2 + GAP_BASE) * DIGIT_SCALE; // 143
-const ST_WIDTH = (COLON_BASE_WIDTH + GAP_BASE + DIGIT_BASE_WIDTH) * DIGIT_SCALE; // 117
+const SC_WIDTH = (COLON_BASE_WIDTH + GAP_BASE + DIGIT_BASE_WIDTH + GAP_BASE + DIGIT_BASE_WIDTH) * DIGIT_SCALE; // 195
 
 const TIMER_GROUP_GAP = 12;
-const TOTAL_TIMER_WIDTH = MM_WIDTH + TIMER_GROUP_GAP + ST_WIDTH + TIMER_GROUP_GAP + DIGIT_WIDTH;
+const TOTAL_TIMER_WIDTH = MM_WIDTH + TIMER_GROUP_GAP + SC_WIDTH;
 const TIMER_Y = Math.floor((DISPLAY_HEIGHT - DIGIT_HEIGHT) / 2);
 const MM_X = Math.floor((DISPLAY_WIDTH - TOTAL_TIMER_WIDTH) / 2);
-const ST_X = MM_X + MM_WIDTH + TIMER_GROUP_GAP;
-const SO_X = ST_X + ST_WIDTH + TIMER_GROUP_GAP;
+const SC_X = MM_X + MM_WIDTH + TIMER_GROUP_GAP;
 
 type PixelPattern = number[][];
 
@@ -155,7 +152,6 @@ let pendingTimerSeconds: number | null = null;
 let pendingTimerForceAll = false;
 
 let cacheWarmupStarted = false;
-
 const imageCache = new Map<string, number[]>();
 
 let canvas: HTMLCanvasElement | null = null;
@@ -306,41 +302,25 @@ async function getMinutesPngBytes(minutes: string): Promise<number[]> {
   return bytes;
 }
 
-async function getSecondTensPngBytes(tens: string): Promise<number[]> {
-  const cacheKey = `st:${tens}`;
+async function getSecondsBlockPngBytes(seconds: string): Promise<number[]> {
+  const cacheKey = `sc:${seconds}`;
   if (imageCache.has(cacheKey)) {
     return imageCache.get(cacheKey)!;
   }
 
-  const tensPattern = DIGIT_PATTERNS[tens];
-  if (!tensPattern) {
+  const tens = DIGIT_PATTERNS[seconds[0]];
+  const ones = DIGIT_PATTERNS[seconds[1]];
+  if (!tens || !ones) {
     return [];
   }
 
-  const bytes = await renderPng(ST_WIDTH, DIGIT_HEIGHT, (drawCtx) => {
+  const tensX = (COLON_BASE_WIDTH + GAP_BASE) * DIGIT_SCALE;
+  const onesX = (COLON_BASE_WIDTH + GAP_BASE + DIGIT_BASE_WIDTH + GAP_BASE) * DIGIT_SCALE;
+
+  const bytes = await renderPng(SC_WIDTH, DIGIT_HEIGHT, (drawCtx) => {
     drawPattern(drawCtx, COLON_PATTERN, 0, 0, DIGIT_SCALE);
-    drawPattern(drawCtx, tensPattern, (COLON_BASE_WIDTH + GAP_BASE) * DIGIT_SCALE, 0, DIGIT_SCALE);
-  });
-
-  if (bytes.length > 0) {
-    imageCache.set(cacheKey, bytes);
-  }
-  return bytes;
-}
-
-async function getSecondOnesPngBytes(ones: string): Promise<number[]> {
-  const cacheKey = `so:${ones}`;
-  if (imageCache.has(cacheKey)) {
-    return imageCache.get(cacheKey)!;
-  }
-
-  const onesPattern = DIGIT_PATTERNS[ones];
-  if (!onesPattern) {
-    return [];
-  }
-
-  const bytes = await renderPng(DIGIT_WIDTH, DIGIT_HEIGHT, (drawCtx) => {
-    drawPattern(drawCtx, onesPattern, 0, 0, DIGIT_SCALE);
+    drawPattern(drawCtx, tens, tensX, 0, DIGIT_SCALE);
+    drawPattern(drawCtx, ones, onesX, 0, DIGIT_SCALE);
   });
 
   if (bytes.length > 0) {
@@ -399,9 +379,7 @@ function queueLatestTimerUpdate(bridge: any, remainingSeconds: number, forceAll:
   pendingTimerForceAll = pendingTimerForceAll || forceAll;
 }
 
-function consumeQueuedTimerUpdate():
-  | { bridge: any; remainingSeconds: number; forceAll: boolean }
-  | null {
+function consumeQueuedTimerUpdate(): { bridge: any; remainingSeconds: number; forceAll: boolean } | null {
   if (!pendingTimerBridge || pendingTimerSeconds === null) {
     return null;
   }
@@ -425,30 +403,21 @@ async function applyTimerImages(bridge: any, remainingSeconds: number, forceAll:
   }
 
   const minutes = time.slice(0, 2);
-  const secondTens = time[3];
-  const secondOnes = time[4];
-
+  const seconds = time.slice(3, 5);
   const previousMinutes = lastDisplayedTime.slice(0, 2);
-  const previousSecondTens = lastDisplayedTime[3];
-  const previousSecondOnes = lastDisplayedTime[4];
+  const previousSeconds = lastDisplayedTime.slice(3, 5);
 
-  const shouldUpdateMM = forceAll || !areTimerImagesVisible || minutes !== previousMinutes;
-  const shouldUpdateST = forceAll || !areTimerImagesVisible || secondTens !== previousSecondTens;
-  const shouldUpdateSO = forceAll || !areTimerImagesVisible || secondOnes !== previousSecondOnes;
+  const shouldUpdateSeconds = forceAll || !areTimerImagesVisible || seconds !== previousSeconds;
+  const shouldUpdateMinutes = forceAll || !areTimerImagesVisible || minutes !== previousMinutes;
 
-  // Update from least-significant to most-significant digit block.
-  // This avoids showing the new minute with stale seconds (e.g. 2:00 before 2:59).
-  if (shouldUpdateSO) {
-    const soBytes = await getSecondOnesPngBytes(secondOnes);
-    await pushImage(bridge, SO_CONTAINER_ID, SO_CONTAINER_NAME, soBytes);
+  // First update the fast-changing block (seconds), then minutes.
+  // This avoids the worst "2:00 -> 2:59" artifact when rollovers are slow.
+  if (shouldUpdateSeconds) {
+    const scBytes = await getSecondsBlockPngBytes(seconds);
+    await pushImage(bridge, SC_CONTAINER_ID, SC_CONTAINER_NAME, scBytes);
   }
 
-  if (shouldUpdateST) {
-    const stBytes = await getSecondTensPngBytes(secondTens);
-    await pushImage(bridge, ST_CONTAINER_ID, ST_CONTAINER_NAME, stBytes);
-  }
-
-  if (shouldUpdateMM) {
+  if (shouldUpdateMinutes) {
     const mmBytes = await getMinutesPngBytes(minutes);
     await pushImage(bridge, MM_CONTAINER_ID, MM_CONTAINER_NAME, mmBytes);
   }
@@ -468,10 +437,10 @@ async function updateTimerImages(bridge: any, remainingSeconds: number, forceAll
   try {
     await applyTimerImages(bridge, remainingSeconds, forceAll);
 
-    let queued = consumeQueuedTimerUpdate();
-    while (queued) {
+    // Apply only one queued update to avoid stale catch-up chains.
+    const queued = consumeQueuedTimerUpdate();
+    if (queued) {
       await applyTimerImages(queued.bridge, queued.remainingSeconds, queued.forceAll);
-      queued = consumeQueuedTimerUpdate();
     }
   } catch (error) {
     console.error('[UI] Failed to update timer images:', error);
@@ -505,12 +474,10 @@ async function clearTimerImages(bridge: any, force = false): Promise<void> {
 
   try {
     const blankMM = await getBlankPngBytes('blank-mm', MM_WIDTH, DIGIT_HEIGHT);
-    const blankST = await getBlankPngBytes('blank-st', ST_WIDTH, DIGIT_HEIGHT);
-    const blankSO = await getBlankPngBytes('blank-so', DIGIT_WIDTH, DIGIT_HEIGHT);
+    const blankSC = await getBlankPngBytes('blank-sc', SC_WIDTH, DIGIT_HEIGHT);
 
     await pushImage(bridge, MM_CONTAINER_ID, MM_CONTAINER_NAME, blankMM);
-    await pushImage(bridge, ST_CONTAINER_ID, ST_CONTAINER_NAME, blankST);
-    await pushImage(bridge, SO_CONTAINER_ID, SO_CONTAINER_NAME, blankSO);
+    await pushImage(bridge, SC_CONTAINER_ID, SC_CONTAINER_NAME, blankSC);
 
     lastDisplayedTime = '';
     areTimerImagesVisible = false;
@@ -523,14 +490,12 @@ async function clearTimerImages(bridge: any, force = false): Promise<void> {
 
 async function warmupCache(selectedPreset: number): Promise<void> {
   const presetMinutes = String(Math.min(99, Math.max(0, selectedPreset))).padStart(2, '0');
+
   await getMinutesPngBytes('00');
   await getMinutesPngBytes(presetMinutes);
 
-  for (let digit = 0; digit <= 9; digit++) {
-    await getSecondOnesPngBytes(String(digit));
-  }
-  for (let digit = 0; digit <= 5; digit++) {
-    await getSecondTensPngBytes(String(digit));
+  for (let sec = 0; sec < 60; sec++) {
+    await getSecondsBlockPngBytes(String(sec).padStart(2, '0'));
   }
 }
 
@@ -617,29 +582,20 @@ export async function createPageContainers(bridge: any, selectedPreset = 5): Pro
       height: DIGIT_HEIGHT,
     });
 
-    const stContainer = new ImageContainerProperty({
-      containerID: ST_CONTAINER_ID,
-      containerName: ST_CONTAINER_NAME,
-      xPosition: ST_X,
+    const scContainer = new ImageContainerProperty({
+      containerID: SC_CONTAINER_ID,
+      containerName: SC_CONTAINER_NAME,
+      xPosition: SC_X,
       yPosition: TIMER_Y,
-      width: ST_WIDTH,
-      height: DIGIT_HEIGHT,
-    });
-
-    const soContainer = new ImageContainerProperty({
-      containerID: SO_CONTAINER_ID,
-      containerName: SO_CONTAINER_NAME,
-      xPosition: SO_X,
-      yPosition: TIMER_Y,
-      width: DIGIT_WIDTH,
+      width: SC_WIDTH,
       height: DIGIT_HEIGHT,
     });
 
     const result = await bridge.createStartUpPageContainer(
       new CreateStartUpPageContainer({
-        containerTotalNum: 4,
+        containerTotalNum: 3,
         textObject: [textContainer],
-        imageObject: [mmContainer, stContainer, soContainer],
+        imageObject: [mmContainer, scContainer],
       }),
     );
 
