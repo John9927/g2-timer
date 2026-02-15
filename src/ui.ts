@@ -61,7 +61,7 @@ export function resetPreviousTexts(): void {
 // Track current screen type
 let currentScreenType: 'preset' | 'timer' | null = null;
 
-// Render preset selection screen (IDLE state) - using textContainerUpgrade
+// Render preset selection screen (IDLE state) - 2 columns layout
 function renderPresetSelection(
   bridge: any,
   selectedPreset: number
@@ -69,21 +69,37 @@ function renderPresetSelection(
   if (!bridge) return;
 
   try {
-    // Create compact preset selection screen to avoid scrollbar
-    // Use fewer lines and more compact format
-    const presetLines = PRESETS.map((preset) => {
-      if (preset === selectedPreset) {
-        // Selected preset: highlighted with brackets
+    // Organize presets in 2 columns for better space usage
+    // Column 1: 1, 3, 5, 10
+    // Column 2: 15, 30, 60
+    const col1 = [1, 3, 5, 10];
+    const col2 = [15, 30, 60];
+    
+    // Format each column with larger spacing
+    const formatPreset = (preset: number, isSelected: boolean) => {
+      if (isSelected) {
         return `> ${preset} <`;
       }
-      return `  ${preset}`;
-    }).join('\n');
-
-    // Reduced spacing to fit in container without scrollbar
-    const content = `Scegli minuti\n\n${presetLines}\n\nSwipe: cambia\nTap: avvia`;
+      return `  ${preset}  `;
+    };
+    
+    // Build two columns side by side with spacing
+    const lines: string[] = [];
+    const maxRows = Math.max(col1.length, col2.length);
+    
+    for (let i = 0; i < maxRows; i++) {
+      const left = i < col1.length ? formatPreset(col1[i], col1[i] === selectedPreset) : '        ';
+      const right = i < col2.length ? formatPreset(col2[i], col2[i] === selectedPreset) : '        ';
+      lines.push(`${left}    ${right}`);
+    }
+    
+    const presetGrid = lines.join('\n');
+    
+    // Compact header and footer
+    const content = `Scegli minuti\n\n${presetGrid}\n\nSwipe: cambia  Tap: avvia`;
     const metrics = getTextMetrics(content);
 
-    console.log('[UI] Updating preset selection');
+    console.log('[UI] Updating preset selection (2 columns)');
     
     bridge.textContainerUpgrade({
       containerID: 1,
@@ -104,18 +120,17 @@ function formatTimeLarge(seconds: number): string {
   const secs = seconds % 60;
   const minStr = String(mins).padStart(2, '0');
   const secStr = String(secs).padStart(2, '0');
-  // Add spaces between each digit to make it appear larger
-  return `${minStr[0]} ${minStr[1]} : ${secStr[0]} ${secStr[1]}`;
+  // Add MORE spaces between each digit to make it appear even larger
+  return `${minStr[0]}   ${minStr[1]}   :   ${secStr[0]}   ${secStr[1]}`;
 }
 
 // Calculate optimal padding to fit content without scrollbar
 // Container height is 288px, we need to leave space for text
 function getTimerPadding(): { top: string; bottom: string } {
-  // Use fewer newlines to ensure content fits in 288px height
-  // Approximately 8-10 lines of text fit in the container
-  // Timer text is about 1-2 lines, so we can use 3-4 newlines top and bottom
-  const topPadding = '\n\n\n\n'; // 4 newlines
-  const bottomPadding = '\n\n\n\n'; // 4 newlines
+  // Use moderate padding to center timer while avoiding scrollbar
+  // Timer text with extra spacing is about 1 line, so we can use 5-6 newlines
+  const topPadding = '\n\n\n\n\n'; // 5 newlines
+  const bottomPadding = '\n\n\n\n\n'; // 5 newlines
   return { top: topPadding, bottom: bottomPadding };
 }
 
@@ -136,8 +151,8 @@ async function renderTimerScreen(
     // Get padding that fits in container without scrollbar
     const padding = getTimerPadding();
     
-    // Horizontal padding to center it
-    const horizontalPadding = '                        '; // ~24 spaces
+    // More horizontal padding to really center the larger text
+    const horizontalPadding = '                              '; // ~30 spaces
     
     let content = `${padding.top}${horizontalPadding}${timeText}${padding.bottom}`;
     
@@ -243,14 +258,24 @@ export async function renderUI(
       if (currentScreenType !== 'preset') {
         await renderPresetSelection(bridge, selectedPreset);
       } else {
-        // Just update content if already showing preset
-        const presetLines = PRESETS.map((preset) => {
-          if (preset === selectedPreset) {
-            return `  > ${preset} min  <`;
+        // Just update content if already showing preset (2 columns)
+        const col1 = [1, 3, 5, 10];
+        const col2 = [15, 30, 60];
+        const formatPreset = (preset: number, isSelected: boolean) => {
+          if (isSelected) {
+            return `> ${preset} <`;
           }
-          return `    ${preset} min`;
-        }).join('\n');
-        const content = `Scegli i minuti\n\n${presetLines}\n\nSwipe per cambiare\nTocca per avviare`;
+          return `  ${preset}  `;
+        };
+        const lines: string[] = [];
+        const maxRows = Math.max(col1.length, col2.length);
+        for (let i = 0; i < maxRows; i++) {
+          const left = i < col1.length ? formatPreset(col1[i], col1[i] === selectedPreset) : '        ';
+          const right = i < col2.length ? formatPreset(col2[i], col2[i] === selectedPreset) : '        ';
+          lines.push(`${left}    ${right}`);
+        }
+        const presetGrid = lines.join('\n');
+        const content = `Scegli minuti\n\n${presetGrid}\n\nSwipe: cambia  Tap: avvia`;
         const metrics = getTextMetrics(content);
         bridge.textContainerUpgrade({
           containerID: 1,
@@ -281,15 +306,24 @@ export async function createPageContainers(bridge: any, selectedPreset: number =
 
   try {
     // Create preset selection screen directly as initial view
-    // Use compact format to avoid scrollbar
-    const presetLines = PRESETS.map((preset) => {
-      if (preset === selectedPreset) {
+    // Use 2 columns layout to avoid scrollbar
+    const col1 = [1, 3, 5, 10];
+    const col2 = [15, 30, 60];
+    const formatPreset = (preset: number, isSelected: boolean) => {
+      if (isSelected) {
         return `> ${preset} <`;
       }
-      return `  ${preset}`;
-    }).join('\n');
-
-    const content = `Scegli minuti\n\n${presetLines}\n\nSwipe: cambia\nTap: avvia`;
+      return `  ${preset}  `;
+    };
+    const lines: string[] = [];
+    const maxRows = Math.max(col1.length, col2.length);
+    for (let i = 0; i < maxRows; i++) {
+      const left = i < col1.length ? formatPreset(col1[i], col1[i] === selectedPreset) : '        ';
+      const right = i < col2.length ? formatPreset(col2[i], col2[i] === selectedPreset) : '        ';
+      lines.push(`${left}    ${right}`);
+    }
+    const presetGrid = lines.join('\n');
+    const content = `Scegli minuti\n\n${presetGrid}\n\nSwipe: cambia  Tap: avvia`;
 
     const textContainer: any = {
       xPosition: 0,
