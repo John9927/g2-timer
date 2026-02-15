@@ -8,6 +8,7 @@ import {
   TimerState,
 } from './constants';
 import type { TimerStateData } from './timerState';
+import { StartUpPageCreateResult } from '@evenrealities/even_hub_sdk';
 
 // Format seconds as MM:SS
 export function formatTime(seconds: number): string {
