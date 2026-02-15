@@ -3,10 +3,29 @@ import { TimerStateManager } from './timerState';
 import { createPageContainers, renderUI } from './ui';
 import { TimerState } from './constants';
 
+const REMOTE_START_DELAY_MS = 3000;
+const REMOTE_START_COUNTDOWN_INTERVAL_MS = 1000;
+
 let bridge: any = null;
 let timerState: TimerStateManager | null = null;
 let isInitialized = false;
 let isInForeground = true;
+let remoteStartTimeoutId: ReturnType<typeof setTimeout> | null = null;
+let remoteStartCountdownIntervalId: ReturnType<typeof setInterval> | null = null;
+let remoteStartScheduledAt: number | null = null;
+
+function clearRemoteStartPending() {
+  if (remoteStartTimeoutId !== null) {
+    clearTimeout(remoteStartTimeoutId);
+    remoteStartTimeoutId = null;
+  }
+  if (remoteStartCountdownIntervalId !== null) {
+    clearInterval(remoteStartCountdownIntervalId);
+    remoteStartCountdownIntervalId = null;
+  }
+  remoteStartScheduledAt = null;
+}
+
 function getStatoLabel(state: TimerState): string {
   switch (state) {
     case TimerState.IDLE:
@@ -38,28 +57,41 @@ function updateRemoteView() {
     remoteStatus.className = connected ? 'connected' : '';
   }
 
+  const isPendingStart = remoteStartScheduledAt !== null;
+
   if (timerState) {
     const mins = Math.floor(timerState.getRemainingSeconds() / 60);
     const secs = timerState.getRemainingSeconds() % 60;
     const timeStr = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
     if (remoteTime) remoteTime.textContent = timeStr;
     if (remoteState) {
-      remoteState.textContent = getStatoLabel(timerState.getState());
-      remoteState.className = timerState.getState().toLowerCase();
+      if (isPendingStart) {
+        const remaining = Math.ceil((REMOTE_START_DELAY_MS - (Date.now() - remoteStartScheduledAt!)) / 1000);
+        remoteState.textContent = remaining > 0 ? `Avvio tra ${remaining}…` : 'Avvio…';
+        remoteState.className = 'running';
+      } else {
+        remoteState.textContent = getStatoLabel(timerState.getState());
+        remoteState.className = timerState.getState().toLowerCase();
+      }
     }
 
     const preset = timerState.getSelectedPreset();
     presetButtons.forEach((btn) => {
       const p = parseInt((btn as HTMLElement).dataset.preset || '', 10);
       btn.classList.toggle('selected', p === preset);
-      (btn as HTMLButtonElement).disabled = !connected;
+      (btn as HTMLButtonElement).disabled = !connected || isPendingStart;
     });
 
     if (btnStartPause) {
       btnStartPause.disabled = !connected;
       const isRunning = timerState.getState() === TimerState.RUNNING;
-      btnStartPause.textContent = isRunning ? 'Pausa' : 'Avvia';
-      btnStartPause.classList.toggle('pause-mode', isRunning);
+      if (isPendingStart) {
+        btnStartPause.textContent = 'Attendere…';
+        btnStartPause.classList.remove('pause-mode');
+      } else {
+        btnStartPause.textContent = isRunning ? 'Pausa' : 'Avvia';
+        btnStartPause.classList.toggle('pause-mode', isRunning);
+      }
     }
     if (btnReset) btnReset.disabled = !connected;
   } else {
@@ -84,19 +116,60 @@ function setupRemoteControl() {
 
   btnStartPause?.addEventListener('click', () => {
     if (!timerState || !bridge) return;
-    timerState.toggleStartPause();
-    renderUI(
-      bridge,
-      timerState.getState(),
-      timerState.getSelectedPreset(),
-      timerState.getRemainingSeconds(),
-      timerState.getBlinkVisibility()
-    ).catch((err) => console.error('Error rendering:', err));
-    updateRemoteView();
+    const state = timerState.getState();
+
+    if (state === TimerState.RUNNING) {
+      clearRemoteStartPending();
+      timerState.toggleStartPause();
+      renderUI(
+        bridge,
+        timerState.getState(),
+        timerState.getSelectedPreset(),
+        timerState.getRemainingSeconds(),
+        timerState.getBlinkVisibility()
+      ).catch((err) => console.error('Error rendering:', err));
+      updateRemoteView();
+      return;
+    }
+
+    if (state === TimerState.PAUSED) {
+      clearRemoteStartPending();
+      timerState.toggleStartPause();
+      renderUI(
+        bridge,
+        timerState.getState(),
+        timerState.getSelectedPreset(),
+        timerState.getRemainingSeconds(),
+        timerState.getBlinkVisibility()
+      ).catch((err) => console.error('Error rendering:', err));
+      updateRemoteView();
+      return;
+    }
+
+    if (state === TimerState.IDLE || state === TimerState.DONE) {
+      if (remoteStartScheduledAt !== null) return;
+      remoteStartScheduledAt = Date.now();
+      remoteStartCountdownIntervalId = setInterval(() => updateRemoteView(), REMOTE_START_COUNTDOWN_INTERVAL_MS);
+      remoteStartTimeoutId = setTimeout(() => {
+        clearRemoteStartPending();
+        if (!timerState || !bridge) return;
+        timerState.start();
+        renderUI(
+          bridge,
+          timerState.getState(),
+          timerState.getSelectedPreset(),
+          timerState.getRemainingSeconds(),
+          timerState.getBlinkVisibility()
+        ).catch((err) => console.error('Error rendering:', err));
+        updateRemoteView();
+      }, REMOTE_START_DELAY_MS);
+      updateRemoteView();
+    }
   });
 
   btnReset?.addEventListener('click', () => {
     if (!timerState || !bridge) return;
+    clearRemoteStartPending();
     timerState.resetToPreset();
     renderUI(
       bridge,
@@ -378,6 +451,7 @@ async function handleSwipeLeft() {
 
 // Cleanup on page unload
 window.addEventListener('beforeunload', () => {
+  clearRemoteStartPending();
   if (bridge && isInitialized) {
     try {
       bridge.shutDownPageContainer(0);
