@@ -89,21 +89,19 @@ async function init() {
       return;
     }
 
-    // Wait for containers to be fully initialized on hardware
-    // The content is already in the containers, but we need to wait for them to be ready
-    await new Promise(resolve => setTimeout(resolve, 300));
-
-    // Now update the UI with current state
-    // This ensures the display matches the actual timer state
-    if (timerState) {
-      renderUI(
-        bridge,
-        timerState.getState(),
-        timerState.getSelectedPreset(),
-        timerState.getRemainingSeconds(),
-        timerState.getBlinkVisibility()
-      );
-    }
+    // Wait a bit for containers to be ready, then update display
+    // Based on working project: call update after small delay
+    setTimeout(() => {
+      if (timerState && bridge) {
+        renderUI(
+          bridge,
+          timerState.getState(),
+          timerState.getSelectedPreset(),
+          timerState.getRemainingSeconds(),
+          timerState.getBlinkVisibility()
+        );
+      }
+    }, 100);
 
     // Set up event handlers
     setupEventHandlers();

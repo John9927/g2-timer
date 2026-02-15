@@ -33,23 +33,13 @@ export function getStatusText(state: TimerState): string {
 }
 
 // Calculate text content length and offset for textContainerUpgrade
-export function getTextMetrics(text: string, previousText: string = ''): { contentLength: number; contentOffset: number } {
-  // For Even Hub SDK, contentLength is the byte length of the text
-  // contentOffset should be 0 for new content or when text changes completely
-  const encoder = new TextEncoder();
-  const encoded = encoder.encode(text);
-  
-  // Calculate offset: if previous text is a prefix of new text, use previous length
-  // Otherwise, start from 0 (full replacement)
-  let contentOffset = 0;
-  if (previousText && text.startsWith(previousText)) {
-    const previousEncoded = encoder.encode(previousText);
-    contentOffset = previousEncoded.length;
-  }
-  
+// IMPORTANT: Based on working project, contentLength should be string length, not byte length!
+export function getTextMetrics(text: string): { contentLength: number; contentOffset: number } {
+  // For Even Hub SDK, contentLength is the STRING LENGTH, not byte length
+  // Always use contentOffset: 0 for updates (as per working project)
   return {
-    contentLength: encoded.length,
-    contentOffset: contentOffset,
+    contentLength: text.length,
+    contentOffset: 0,
   };
 }
 
@@ -63,14 +53,9 @@ export function createStatusIcon(state: TimerState): Uint8Array | null {
   return null;
 }
 
-// Store previous text values for incremental updates
-let previousTexts: Record<number, string> = {};
-let isFirstRender = true;
-
-// Reset previous texts (useful when recreating containers)
+// Reset function (kept for compatibility, but not needed with new approach)
 export function resetPreviousTexts(): void {
-  previousTexts = {};
-  isFirstRender = true;
+  // No-op: we always use contentOffset: 0 now
 }
 
 // Render all UI elements
@@ -84,71 +69,50 @@ export function renderUI(
   if (!bridge) return;
 
   try {
-    // On first render, always use contentOffset: 0 to replace initial content
-    // On subsequent renders, use incremental updates if possible
-    const useIncremental = !isFirstRender;
-    
-    if (isFirstRender) {
-      console.log('First render - using contentOffset: 0 for all containers');
-    }
-    
     // Update title
     const titleText = 'TIMER';
-    const previousTitle = useIncremental ? (previousTexts[CONTAINER_IDS.TITLE] || '') : '';
-    const titleMetrics = getTextMetrics(titleText, previousTitle);
+    const titleMetrics = getTextMetrics(titleText);
     bridge.textContainerUpgrade({
       containerID: CONTAINER_IDS.TITLE,
       containerName: CONTAINER_NAMES.TITLE,
       content: titleText,
       contentLength: titleMetrics.contentLength,
-      contentOffset: isFirstRender ? 0 : titleMetrics.contentOffset,
+      contentOffset: titleMetrics.contentOffset,
     });
-    previousTexts[CONTAINER_IDS.TITLE] = titleText;
 
     // Update time display
     const timeText = formatTime(remainingSeconds);
-    const previousTime = useIncremental ? (previousTexts[CONTAINER_IDS.TIME_DISPLAY] || '') : '';
-    const timeMetrics = getTextMetrics(timeText, previousTime);
+    const timeMetrics = getTextMetrics(timeText);
     bridge.textContainerUpgrade({
       containerID: CONTAINER_IDS.TIME_DISPLAY,
       containerName: CONTAINER_NAMES.TIME_DISPLAY,
       content: timeText,
       contentLength: timeMetrics.contentLength,
-      contentOffset: isFirstRender ? 0 : timeMetrics.contentOffset,
+      contentOffset: timeMetrics.contentOffset,
     });
-    previousTexts[CONTAINER_IDS.TIME_DISPLAY] = timeText;
 
     // Update preset row
     const presetText = formatPresetRow(selectedPreset);
-    const previousPreset = useIncremental ? (previousTexts[CONTAINER_IDS.PRESET_ROW] || '') : '';
-    const presetMetrics = getTextMetrics(presetText, previousPreset);
+    const presetMetrics = getTextMetrics(presetText);
     bridge.textContainerUpgrade({
       containerID: CONTAINER_IDS.PRESET_ROW,
       containerName: CONTAINER_NAMES.PRESET_ROW,
       content: presetText,
       contentLength: presetMetrics.contentLength,
-      contentOffset: isFirstRender ? 0 : presetMetrics.contentOffset,
+      contentOffset: presetMetrics.contentOffset,
     });
-    previousTexts[CONTAINER_IDS.PRESET_ROW] = presetText;
 
     // Update status (hide text if blinking and not visible)
     const statusText = getStatusText(state);
     const displayStatusText = isBlinkingVisible ? statusText : '';
-    const previousStatus = useIncremental ? (previousTexts[CONTAINER_IDS.STATUS] || '') : '';
-    const statusMetrics = getTextMetrics(displayStatusText, previousStatus);
+    const statusMetrics = getTextMetrics(displayStatusText);
     bridge.textContainerUpgrade({
       containerID: CONTAINER_IDS.STATUS,
       containerName: CONTAINER_NAMES.STATUS,
       content: displayStatusText,
       contentLength: statusMetrics.contentLength,
-      contentOffset: isFirstRender ? 0 : statusMetrics.contentOffset,
+      contentOffset: statusMetrics.contentOffset,
     });
-    previousTexts[CONTAINER_IDS.STATUS] = displayStatusText;
-    
-    // Mark first render as complete
-    if (isFirstRender) {
-      isFirstRender = false;
-    }
   } catch (error) {
     console.error('Error rendering UI:', error);
   }
@@ -173,8 +137,6 @@ export async function createPageContainers(bridge: any): Promise<boolean> {
         content: 'TIMER',
         isEventCapture: 1, // Enable tap events
         paddingLength: 5,
-        // Ensure contentLength is set for initial content
-        contentLength: new TextEncoder().encode('TIMER').length,
       },
       // Time display
       {
@@ -187,7 +149,6 @@ export async function createPageContainers(bridge: any): Promise<boolean> {
         content: '05:00',
         isEventCapture: 1, // Enable tap events
         paddingLength: 5,
-        contentLength: new TextEncoder().encode('05:00').length,
       },
       // Preset row
       {
@@ -200,7 +161,6 @@ export async function createPageContainers(bridge: any): Promise<boolean> {
         content: '1 3 5 10 15 30 60',
         isEventCapture: 1, // Enable tap events
         paddingLength: 5,
-        contentLength: new TextEncoder().encode('1 3 5 10 15 30 60').length,
       },
       // Status
       {
@@ -213,7 +173,6 @@ export async function createPageContainers(bridge: any): Promise<boolean> {
         content: 'IDLE',
         isEventCapture: 1, // Enable tap events
         paddingLength: 5,
-        contentLength: new TextEncoder().encode('IDLE').length,
       },
     ];
 
