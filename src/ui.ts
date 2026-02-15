@@ -7,6 +7,7 @@ import {
   CreateStartUpPageContainer,
   TextContainerProperty,
   TextContainerUpgrade,
+  ImageRawDataUpdate,
 } from '@evenrealities/even_hub_sdk';
 
 /* ─── helpers ─────────────────────────────────────────────────────────── */
@@ -625,23 +626,21 @@ async function switchToTimerScreen(
     // Reset tracking to force full update
     lastDisplayedDigits = '';
 
-    // Update text container to show status at bottom
-    let statusText = ' ';
+    // Update text container to show timer (temporarily using text only)
+    const time = formatTime(remainingSeconds);
+    let statusText = time;
     if (state === TimerState.PAUSED) {
-      statusText = '\n\n\n\n\n\n\n\n       PAUSED';
+      statusText = `${time}\n\nPAUSED`;
     } else if (state === TimerState.DONE) {
-      statusText = '\n\n\n\n\n\n\n\n     COMPLETATO';
+      statusText = `${time}\n\nCOMPLETATO`;
     }
 
     pushText(bridge, statusText);
     currentScreenType = 'timer';
 
-    // Wait for hardware to be ready
-    await new Promise(resolve => setTimeout(resolve, 300));
-    
-    // Initialize all digits (this will update all containers)
-    console.log('[UI] Initializing timer digits...');
-    await updateDigitContainers(bridge, remainingSeconds);
+    // TODO: Re-enable digit containers after text container works
+    // await new Promise(resolve => setTimeout(resolve, 300));
+    // await updateDigitContainers(bridge, remainingSeconds);
   } catch (e) {
     console.error('[UI] Error switching to timer screen:', e);
     imageUpdateInProgress = false; // Reset on error
