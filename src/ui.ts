@@ -58,11 +58,14 @@ export function resetPreviousTexts(): void {
   // No-op: we always use contentOffset: 0 now
 }
 
-// Render preset selection screen (IDLE state) - using textContainerUpgrade
-function renderPresetSelection(
+// Track current screen type
+let currentScreenType: 'preset' | 'timer' | null = null;
+
+// Render preset selection screen (IDLE state)
+async function renderPresetSelection(
   bridge: any,
   selectedPreset: number
-): void {
+): Promise<void> {
   if (!bridge) return;
 
   try {
@@ -76,24 +79,96 @@ function renderPresetSelection(
     }).join('\n');
 
     const content = `Scegli i minuti\n\n${presetLines}\n\nSwipe per cambiare\nTocca per avviare`;
-    const metrics = getTextMetrics(content);
 
-    console.log('[UI] Updating preset selection:', content.substring(0, 80));
-    
-    bridge.textContainerUpgrade({
+    const textContainer: any = {
+      xPosition: 0,
+      yPosition: 0,
+      width: 576,
+      height: 288,
+      borderWidth: 0,
+      borderColor: 0,
+      paddingLength: 20,
       containerID: 1,
-      containerName: "timer-main",
+      containerName: "preset-selection",
       content: content,
-      contentLength: metrics.contentLength,
-      contentOffset: metrics.contentOffset,
-    });
+      isEventCapture: 1,
+    };
+
+    const container: any = {
+      containerTotalNum: 1,
+      textObject: [textContainer],
+    };
+
+    console.log('[UI] Rebuilding to preset selection screen');
+    await bridge.rebuildPageContainer(container);
+    currentScreenType = 'preset';
   } catch (error) {
     console.error('Error rendering preset selection:', error);
   }
 }
 
-// Render timer screen (RUNNING/PAUSED/DONE state) - using textContainerUpgrade
-function renderTimerScreen(
+// Render timer screen (RUNNING/PAUSED/DONE state) - FULL SCREEN LARGE
+async function renderTimerScreen(
+  bridge: any,
+  state: TimerState,
+  remainingSeconds: number,
+  isBlinkingVisible: boolean = true
+): Promise<void> {
+  if (!bridge) return;
+
+  try {
+    const timeText = formatTime(remainingSeconds);
+    
+    // Create a FULL SCREEN timer with maximum spacing
+    // Use many newlines to center vertically and make it appear larger
+    // The font is fixed size, but we can use spacing to make it feel bigger
+    const verticalPadding = '\n\n\n\n\n\n\n\n\n\n'; // 10 newlines top
+    const verticalPaddingBottom = '\n\n\n\n\n\n\n\n\n\n'; // 10 newlines bottom
+    
+    // Center horizontally by adding spaces (approximate centering)
+    // Timer format is MM:SS (5 chars), screen is ~576px wide
+    // With padding 20, we have ~536px for text
+    // Try to center by adding spaces before
+    const horizontalPadding = '                    '; // ~20 spaces
+    
+    let content = `${verticalPadding}${horizontalPadding}${timeText}${verticalPaddingBottom}`;
+    
+    // Add status if paused
+    if (state === TimerState.PAUSED) {
+      content = `${verticalPadding}${horizontalPadding}${timeText}\n\n${horizontalPadding}PAUSED${verticalPaddingBottom}`;
+    } else if (state === TimerState.DONE && isBlinkingVisible) {
+      content = `${verticalPadding}${horizontalPadding}${timeText}\n\n${horizontalPadding}COMPLETATO${verticalPaddingBottom}`;
+    }
+
+    const textContainer: any = {
+      xPosition: 0,
+      yPosition: 0,
+      width: 576,
+      height: 288,
+      borderWidth: 0,
+      borderColor: 0,
+      paddingLength: 0, // No padding to maximize space
+      containerID: 1,
+      containerName: "timer-display",
+      content: content,
+      isEventCapture: 1,
+    };
+
+    const container: any = {
+      containerTotalNum: 1,
+      textObject: [textContainer],
+    };
+
+    console.log('[UI] Rebuilding to timer screen (full screen)');
+    await bridge.rebuildPageContainer(container);
+    currentScreenType = 'timer';
+  } catch (error) {
+    console.error('Error rendering timer screen:', error);
+  }
+}
+
+// Update timer screen content (when already showing timer)
+function updateTimerScreen(
   bridge: any,
   state: TimerState,
   remainingSeconds: number,
@@ -104,45 +179,41 @@ function renderTimerScreen(
   try {
     const timeText = formatTime(remainingSeconds);
     
-    // Large timer display - center the time
-    // Add extra spacing to make it really big and centered
-    const paddingTop = '\n\n\n\n\n\n';
-    const paddingBottom = '\n\n\n\n\n\n';
+    const verticalPadding = '\n\n\n\n\n\n\n\n\n\n';
+    const verticalPaddingBottom = '\n\n\n\n\n\n\n\n\n\n';
+    const horizontalPadding = '                    ';
     
-    let content = `${paddingTop}${timeText}${paddingBottom}`;
+    let content = `${verticalPadding}${horizontalPadding}${timeText}${verticalPaddingBottom}`;
     
-    // Add status if paused (but not if blinking/done)
     if (state === TimerState.PAUSED) {
-      content = `${paddingTop}${timeText}\n\nPAUSED${paddingBottom}`;
+      content = `${verticalPadding}${horizontalPadding}${timeText}\n\n${horizontalPadding}PAUSED${verticalPaddingBottom}`;
     } else if (state === TimerState.DONE && isBlinkingVisible) {
-      content = `${paddingTop}${timeText}\n\nCOMPLETATO${paddingBottom}`;
+      content = `${verticalPadding}${horizontalPadding}${timeText}\n\n${horizontalPadding}COMPLETATO${verticalPaddingBottom}`;
     }
 
     const metrics = getTextMetrics(content);
     
-    console.log('[UI] Updating timer screen:', timeText);
-    
     bridge.textContainerUpgrade({
       containerID: 1,
-      containerName: "timer-main",
+      containerName: "timer-display",
       content: content,
       contentLength: metrics.contentLength,
       contentOffset: metrics.contentOffset,
     });
   } catch (error) {
-    console.error('Error rendering timer screen:', error);
+    console.error('Error updating timer screen:', error);
   }
 }
 
 // Render all UI elements - switches between preset selection and timer screen
-export function renderUI(
+export async function renderUI(
   bridge: any,
   state: TimerState,
   selectedPreset: number,
   remainingSeconds: number,
   isBlinkingVisible: boolean = true,
   debugMessage?: string
-): void {
+): Promise<void> {
   if (!bridge) return;
 
   try {
@@ -151,7 +222,7 @@ export function renderUI(
       const metrics = getTextMetrics(debugMessage);
       bridge.textContainerUpgrade({
         containerID: 1,
-        containerName: "timer-main",
+        containerName: currentScreenType === 'timer' ? "timer-display" : "preset-selection",
         content: debugMessage,
         contentLength: metrics.contentLength,
         contentOffset: metrics.contentOffset,
@@ -161,10 +232,35 @@ export function renderUI(
 
     // Show preset selection when IDLE
     if (state === TimerState.IDLE) {
-      renderPresetSelection(bridge, selectedPreset);
+      if (currentScreenType !== 'preset') {
+        await renderPresetSelection(bridge, selectedPreset);
+      } else {
+        // Just update content if already showing preset
+        const presetLines = PRESETS.map((preset) => {
+          if (preset === selectedPreset) {
+            return `  > ${preset} min  <`;
+          }
+          return `    ${preset} min`;
+        }).join('\n');
+        const content = `Scegli i minuti\n\n${presetLines}\n\nSwipe per cambiare\nTocca per avviare`;
+        const metrics = getTextMetrics(content);
+        bridge.textContainerUpgrade({
+          containerID: 1,
+          containerName: "preset-selection",
+          content: content,
+          contentLength: metrics.contentLength,
+          contentOffset: metrics.contentOffset,
+        });
+      }
     } else {
       // Show timer screen when RUNNING, PAUSED, or DONE
-      renderTimerScreen(bridge, state, remainingSeconds, isBlinkingVisible);
+      if (currentScreenType !== 'timer') {
+        // Rebuild to timer screen (full screen, large)
+        await renderTimerScreen(bridge, state, remainingSeconds, isBlinkingVisible);
+      } else {
+        // Just update time if already showing timer
+        updateTimerScreen(bridge, state, remainingSeconds, isBlinkingVisible);
+      }
     }
   } catch (error) {
     console.error('Error rendering UI:', error);

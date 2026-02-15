@@ -90,9 +90,9 @@ async function init() {
     timerState = new TimerStateManager();
 
     // Set up update callback (called every second when running)
-    timerState.setOnUpdate(() => {
+    timerState.setOnUpdate(async () => {
       if (isInForeground && bridge && timerState) {
-        renderUI(
+        await renderUI(
           bridge,
           timerState.getState(),
           timerState.getSelectedPreset(),
@@ -105,9 +105,9 @@ async function init() {
     });
 
     // Set up state change callback (called when state changes)
-    timerState.setOnStateChange(() => {
+    timerState.setOnStateChange(async () => {
       if (isInForeground && bridge && timerState) {
-        renderUI(
+        await renderUI(
           bridge,
           timerState.getState(),
           timerState.getSelectedPreset(),
@@ -135,10 +135,10 @@ async function init() {
 
     // Initial render - show preset selection
     // Add small delay to ensure container is ready
-    setTimeout(() => {
+    setTimeout(async () => {
       if (timerState && bridge) {
         debugLogToDisplay('Primo render...');
-        renderUI(
+        await renderUI(
           bridge,
           timerState.getState(),
           timerState.getSelectedPreset(),
@@ -230,11 +230,11 @@ function setupEventHandlers() {
         if (eventType === 1) {
           // Swipe forward/up: next preset
           console.log('SCROLL_TOP detected - swipe forward');
-          handleSwipeRight();
+          handleSwipeRight().catch(err => console.error('Error handling swipe right:', err));
         } else if (eventType === 2) {
           // Swipe back/down: previous preset
           console.log('SCROLL_BOTTOM detected - swipe back');
-          handleSwipeLeft();
+          handleSwipeLeft().catch(err => console.error('Error handling swipe left:', err));
         }
       }
 
@@ -250,7 +250,7 @@ function setupEventHandlers() {
               timerState.getSelectedPreset(),
               timerState.getRemainingSeconds(),
               timerState.getBlinkVisibility()
-            );
+            ).catch(err => console.error('Error rendering:', err));
           }
         } else if (event.eventType === 'exitForeground') {
           isInForeground = false;
@@ -307,14 +307,14 @@ function setupEventHandlers() {
 }
 
 // Handle single tap: start/pause timer
-function handleSingleTap() {
+async function handleSingleTap() {
   if (!timerState || !bridge) return;
   
   console.log('Single tap: start/pause timer');
   timerState.toggleStartPause();
   debugLogToDisplay('Tap: timer toggled');
   
-  renderUI(
+  await renderUI(
     bridge,
     timerState.getState(),
     timerState.getSelectedPreset(),
@@ -325,7 +325,7 @@ function handleSingleTap() {
 }
 
 // Handle swipe right: next preset (SCROLL_TOP_EVENT = 1)
-function handleSwipeRight() {
+async function handleSwipeRight() {
   if (!timerState || !bridge) return;
   
   // Throttle swipes to prevent rapid duplicate events
@@ -339,7 +339,7 @@ function handleSwipeRight() {
   timerState.cyclePreset();
   debugLogToDisplay('Swipe right: next preset');
   
-  renderUI(
+  await renderUI(
     bridge,
     timerState.getState(),
     timerState.getSelectedPreset(),
@@ -350,7 +350,7 @@ function handleSwipeRight() {
 }
 
 // Handle swipe left: previous preset (SCROLL_BOTTOM_EVENT = 2)
-function handleSwipeLeft() {
+async function handleSwipeLeft() {
   if (!timerState || !bridge) return;
   
   // Throttle swipes to prevent rapid duplicate events
@@ -364,7 +364,7 @@ function handleSwipeLeft() {
   timerState.cyclePresetBackward();
   debugLogToDisplay('Swipe left: previous preset');
   
-  renderUI(
+  await renderUI(
     bridge,
     timerState.getState(),
     timerState.getSelectedPreset(),
