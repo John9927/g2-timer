@@ -124,19 +124,33 @@ function pushText(bridge: any, content: string) {
  * the next tick (1 s later) will pick up the latest time.
  */
 function pushImage(bridge: any, seconds: number, status?: string) {
-  if (imageUpdateInProgress) return;
+  if (imageUpdateInProgress) {
+    console.log('[UI] Image update skipped (already in progress)');
+    return;
+  }
   imageUpdateInProgress = true;
 
   const url = renderTimerImage(seconds, status);
-  if (!url) { imageUpdateInProgress = false; return; }
+  if (!url) {
+    console.error('[UI] Failed to render timer image');
+    imageUpdateInProgress = false;
+    return;
+  }
 
+  console.log('[UI] Pushing timer image update...');
   bridge.updateImageRawData({
     containerID: 2,
     containerName: 'timer-img',
     imageData: toBytes(url),
   })
-    .then(() => { imageUpdateInProgress = false; })
-    .catch(() => { imageUpdateInProgress = false; });
+    .then(() => {
+      console.log('[UI] Image update completed');
+      imageUpdateInProgress = false;
+    })
+    .catch((err: any) => {
+      console.error('[UI] Image update failed:', err);
+      imageUpdateInProgress = false;
+    });
 }
 
 
@@ -285,6 +299,9 @@ async function switchToTimerScreen(
   if (!bridge) return;
 
   try {
+    // Reset the image update flag to ensure we can send the image
+    imageUpdateInProgress = false;
+
     // Text container – thin strip at bottom for status + event capture
     let statusText = ' ';
     if (state === TimerState.PAUSED) {
@@ -320,25 +337,38 @@ async function switchToTimerScreen(
     };
 
     console.log('[UI] Rebuilding to timer screen (one-time)');
-    await bridge.rebuildPageContainer({
+    const rebuildResult = await bridge.rebuildPageContainer({
       containerTotalNum: 2,
       textObject: [textContainer],
       imageObject: [imageContainer],
     });
+    console.log('[UI] Rebuild result:', rebuildResult);
     currentScreenType = 'timer';
 
-    // Small delay to ensure container is ready, then push image immediately
-    await new Promise(resolve => setTimeout(resolve, 50));
+    // Longer delay to ensure container is fully ready on hardware
+    await new Promise(resolve => setTimeout(resolve, 200));
     
+    // Generate and send the image
     const url = renderTimerImage(remainingSeconds, status);
-    if (url) {
-      bridge.updateImageRawData({
+    if (!url) {
+      console.error('[UI] Failed to generate timer image');
+      return;
+    }
+    
+    console.log('[UI] Sending initial timer image...');
+    try {
+      await bridge.updateImageRawData({
         containerID: 2,
         containerName: 'timer-img',
         imageData: toBytes(url),
-      }).catch((err: any) => console.error('[UI] Error sending initial image:', err));
+      });
+      console.log('[UI] Initial image sent successfully');
+    } catch (err: any) {
+      console.error('[UI] Error sending initial image:', err);
+      imageUpdateInProgress = false; // Reset on error
     }
   } catch (e) {
     console.error('[UI] Error switching to timer screen:', e);
+    imageUpdateInProgress = false; // Reset on error
   }
 }
