@@ -82,14 +82,19 @@ async function init() {
     });
 
     // Create page containers once
+    // Note: Containers are created with initial content, so they should be visible immediately
     const containersCreated = await createPageContainers(bridge);
     if (!containersCreated) {
       console.error('Failed to create page containers');
       return;
     }
 
-    // Initial render immediately after container creation
-    // On real hardware, containers should be ready right after creation
+    // Wait for containers to be fully initialized on hardware
+    // The content is already in the containers, but we need to wait for them to be ready
+    await new Promise(resolve => setTimeout(resolve, 300));
+
+    // Now update the UI with current state
+    // This ensures the display matches the actual timer state
     if (timerState) {
       renderUI(
         bridge,
@@ -98,20 +103,6 @@ async function init() {
         timerState.getRemainingSeconds(),
         timerState.getBlinkVisibility()
       );
-      
-      // Also render again after a short delay to ensure it's visible on hardware
-      // Sometimes the first render needs a moment to propagate
-      setTimeout(() => {
-        if (timerState && bridge) {
-          renderUI(
-            bridge,
-            timerState.getState(),
-            timerState.getSelectedPreset(),
-            timerState.getRemainingSeconds(),
-            timerState.getBlinkVisibility()
-          );
-        }
-      }, 200);
     }
 
     // Set up event handlers

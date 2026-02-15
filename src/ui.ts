@@ -173,6 +173,8 @@ export async function createPageContainers(bridge: any): Promise<boolean> {
         content: 'TIMER',
         isEventCapture: 1, // Enable tap events
         paddingLength: 5,
+        // Ensure contentLength is set for initial content
+        contentLength: new TextEncoder().encode('TIMER').length,
       },
       // Time display
       {
@@ -185,6 +187,7 @@ export async function createPageContainers(bridge: any): Promise<boolean> {
         content: '05:00',
         isEventCapture: 1, // Enable tap events
         paddingLength: 5,
+        contentLength: new TextEncoder().encode('05:00').length,
       },
       // Preset row
       {
@@ -197,6 +200,7 @@ export async function createPageContainers(bridge: any): Promise<boolean> {
         content: '1 3 5 10 15 30 60',
         isEventCapture: 1, // Enable tap events
         paddingLength: 5,
+        contentLength: new TextEncoder().encode('1 3 5 10 15 30 60').length,
       },
       // Status
       {
@@ -209,6 +213,7 @@ export async function createPageContainers(bridge: any): Promise<boolean> {
         content: 'IDLE',
         isEventCapture: 1, // Enable tap events
         paddingLength: 5,
+        contentLength: new TextEncoder().encode('IDLE').length,
       },
     ];
 
@@ -239,10 +244,9 @@ export async function createPageContainers(bridge: any): Promise<boolean> {
     const isSuccess = result === StartUpPageCreateResult.success || result === 0 || result === 1 || result === 'success';
     
     if (isSuccess) {
-      console.log('Containers created successfully, waiting for initialization...');
-      // Small delay to ensure containers are fully initialized on hardware
-      await new Promise(resolve => setTimeout(resolve, 100));
-      console.log('Containers should be ready now');
+      console.log('Containers created successfully');
+      // Note: Containers are created with initial content, so they should be visible
+      // We don't need to render immediately - the content is already there
     } else {
       console.error('Container creation failed with result:', result);
     }
