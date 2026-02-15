@@ -503,16 +503,18 @@ export async function renderUI(
       return;
     }
 
-    // Already on timer screen – just update text status and digits
-    let txt = ' ';
+    // Already on timer screen – just update text with time
+    const time = formatTime(remainingSeconds);
+    let txt = time;
     if (state === TimerState.PAUSED) {
-      txt = '\n\n\n\n\n\n\n\n       PAUSED';
+      txt = `${time}\n\nPAUSED`;
     } else if (state === TimerState.DONE && isBlinkingVisible) {
-      txt = '\n\n\n\n\n\n\n\n     COMPLETATO';
+      txt = `${time}\n\nCOMPLETATO`;
     }
 
+    console.log('[UI] Updating timer text:', txt, 'seconds:', remainingSeconds);
     pushText(bridge, txt);
-    await updateDigitContainers(bridge, remainingSeconds);
+    // Digit containers temporarily disabled - using text only
   } catch (e) {
     console.error('renderUI error:', e);
   }
