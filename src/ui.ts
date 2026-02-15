@@ -137,6 +137,8 @@ export async function createPageContainers(bridge: any): Promise<boolean> {
         content: 'TIMER',
         isEventCapture: 1, // Enable tap events
         paddingLength: 5,
+        borderWidth: 1,
+        borderColor: 15, // white border to make it visible
       },
       // Time display
       {
@@ -149,6 +151,8 @@ export async function createPageContainers(bridge: any): Promise<boolean> {
         content: '05:00',
         isEventCapture: 1, // Enable tap events
         paddingLength: 5,
+        borderWidth: 1,
+        borderColor: 15, // white border to make it visible
       },
       // Preset row
       {
@@ -161,6 +165,8 @@ export async function createPageContainers(bridge: any): Promise<boolean> {
         content: '1 3 5 10 15 30 60',
         isEventCapture: 1, // Enable tap events
         paddingLength: 5,
+        borderWidth: 1,
+        borderColor: 15, // white border to make it visible
       },
       // Status
       {
@@ -173,6 +179,8 @@ export async function createPageContainers(bridge: any): Promise<boolean> {
         content: 'IDLE',
         isEventCapture: 1, // Enable tap events
         paddingLength: 5,
+        borderWidth: 1,
+        borderColor: 15, // white border to make it visible
       },
     ];
 
@@ -195,19 +203,21 @@ export async function createPageContainers(bridge: any): Promise<boolean> {
       }))
     });
     
+    console.log('[Boot] 📺 Creazione contenitore display...');
     const result = await bridge.createStartUpPageContainer(container);
-    console.log('CreateStartUpPageContainer result:', result);
+    console.log('[Boot] 📊 CreateStartUpPageContainer result:', result);
+    console.log('[Boot] 📊 StartUpPageCreateResult.success:', StartUpPageCreateResult.success);
     
     // On real hardware, sometimes we need to wait a bit for containers to be ready
     // The result might be successful but containers need time to initialize
     const isSuccess = result === StartUpPageCreateResult.success || result === 0 || result === 1 || result === 'success';
     
     if (isSuccess) {
-      console.log('Containers created successfully');
-      // Note: Containers are created with initial content, so they should be visible
-      // We don't need to render immediately - the content is already there
+      console.log('[Display] ✅ Contenitore display creato con successo');
     } else {
-      console.error('Container creation failed with result:', result);
+      console.error('[Display] ❌ Errore creazione contenitore:', result);
+      console.log('[Display] 🔄 Tentativo di aggiornare contenitore esistente...');
+      // Even if creation "fails", try to update anyway (like working project does)
     }
     
     return isSuccess;

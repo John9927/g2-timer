@@ -45,9 +45,24 @@ function updateDebugView() {
 async function init() {
   try {
     updateDebugView(); // Initial debug view update
+    console.log('[Boot] 🔌 Inizializzazione bridge Even...');
     bridge = await waitForEvenAppBridge();
-    console.log('Even Hub bridge connected');
+    console.log('[Boot] ✅ Bridge Even ricevuto');
+    console.log('[Boot] 📊 Bridge disponibile:', !!bridge);
+    if (bridge) {
+      console.log('[Boot] 📊 Bridge methods:', Object.keys(bridge || {}));
+    }
     updateDebugView(); // Update after bridge connection
+    
+    if (!bridge) {
+      console.error('[Boot] ❌ Bridge non disponibile!');
+      const bridgeStatus = document.getElementById('bridge-status');
+      if (bridgeStatus) {
+        bridgeStatus.textContent = 'Bridge: Not available ❌';
+        bridgeStatus.className = 'debug-line error';
+      }
+      return;
+    }
 
     timerState = new TimerStateManager();
 
@@ -82,26 +97,38 @@ async function init() {
     });
 
     // Create page containers once
-    // Note: Containers are created with initial content, so they should be visible immediately
     const containersCreated = await createPageContainers(bridge);
     if (!containersCreated) {
       console.error('Failed to create page containers');
       return;
     }
 
-    // Wait a bit for containers to be ready, then update display
-    // Based on working project: call update after small delay
-    setTimeout(() => {
-      if (timerState && bridge) {
-        renderUI(
-          bridge,
-          timerState.getState(),
-          timerState.getSelectedPreset(),
-          timerState.getRemainingSeconds(),
-          timerState.getBlinkVisibility()
-        );
-      }
-    }, 100);
+    // IMPORTANT: Even if containers have initial content, we MUST call textContainerUpgrade
+    // immediately after creation to make them visible on real hardware
+    // Based on working project pattern
+    if (timerState && bridge) {
+      // First update immediately
+      renderUI(
+        bridge,
+        timerState.getState(),
+        timerState.getSelectedPreset(),
+        timerState.getRemainingSeconds(),
+        timerState.getBlinkVisibility()
+      );
+      
+      // Also update after a small delay (like working project does)
+      setTimeout(() => {
+        if (timerState && bridge) {
+          renderUI(
+            bridge,
+            timerState.getState(),
+            timerState.getSelectedPreset(),
+            timerState.getRemainingSeconds(),
+            timerState.getBlinkVisibility()
+          );
+        }
+      }, 100);
+    }
 
     // Set up event handlers
     setupEventHandlers();
