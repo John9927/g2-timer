@@ -148,19 +148,19 @@ function setupRemoteControl() {
 
     if (state === TimerState.IDLE || state === TimerState.DONE) {
       if (remoteStartScheduledAt !== null) return;
+      // Start immediately on glasses so they render right away; phone shows countdown delay
+      timerState.start();
+      renderUI(
+        bridge,
+        timerState.getState(),
+        timerState.getSelectedPreset(),
+        timerState.getRemainingSeconds(),
+        timerState.getBlinkVisibility()
+      ).catch((err) => console.error('Error rendering:', err));
       remoteStartScheduledAt = Date.now();
       remoteStartCountdownIntervalId = setInterval(() => updateRemoteView(), REMOTE_START_COUNTDOWN_INTERVAL_MS);
       remoteStartTimeoutId = setTimeout(() => {
         clearRemoteStartPending();
-        if (!timerState || !bridge) return;
-        timerState.start();
-        renderUI(
-          bridge,
-          timerState.getState(),
-          timerState.getSelectedPreset(),
-          timerState.getRemainingSeconds(),
-          timerState.getBlinkVisibility()
-        ).catch((err) => console.error('Error rendering:', err));
         updateRemoteView();
       }, REMOTE_START_DELAY_MS);
       updateRemoteView();
