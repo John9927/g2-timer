@@ -114,24 +114,33 @@ function renderPresetSelection(
   }
 }
 
-// Format time with extra spacing between digits to make it appear larger
-function formatTimeLarge(seconds: number): string {
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  const minStr = String(mins).padStart(2, '0');
-  const secStr = String(secs).padStart(2, '0');
-  // Add MORE spaces between each digit to make it appear even larger
-  return `${minStr[0]}   ${minStr[1]}   :   ${secStr[0]}   ${secStr[1]}`;
-}
+// Big ASCII-like digits for a larger timer without relying on font scaling.
+const BIG_DIGITS: Record<string, string[]> = {
+  '0': [' ### ', '#   #', '#   #', '#   #', ' ### '],
+  '1': ['  #  ', ' ##  ', '  #  ', '  #  ', ' ### '],
+  '2': [' ### ', '#   #', '   # ', '  #  ', '#####'],
+  '3': ['#### ', '    #', ' ### ', '    #', '#### '],
+  '4': ['#   #', '#   #', '#####', '    #', '    #'],
+  '5': ['#####', '#    ', '#### ', '    #', '#### '],
+  '6': [' ### ', '#    ', '#### ', '#   #', ' ### '],
+  '7': ['#####', '    #', '   # ', '  #  ', '  #  '],
+  '8': [' ### ', '#   #', ' ### ', '#   #', ' ### '],
+  '9': [' ### ', '#   #', ' ####', '    #', ' ### '],
+  ':': ['  ', '##', '  ', '##', '  '],
+};
 
-// Calculate optimal padding to fit content without scrollbar
-// Container height is 288px, we need to leave space for text
-function getTimerPadding(): { top: string; bottom: string } {
-  // Use moderate padding to center timer while avoiding scrollbar
-  // Timer text with extra spacing is about 1 line, so we can use 5-6 newlines
-  const topPadding = '\n\n\n\n\n'; // 5 newlines
-  const bottomPadding = '\n\n\n\n\n'; // 5 newlines
-  return { top: topPadding, bottom: bottomPadding };
+function buildLargeTimerBlock(seconds: number): string {
+  const time = formatTime(seconds); // MM:SS
+  const rows = ['', '', '', '', ''];
+
+  for (const ch of time) {
+    const glyph = BIG_DIGITS[ch] || BIG_DIGITS['0'];
+    for (let i = 0; i < 5; i++) {
+      rows[i] += `${glyph[i]}  `;
+    }
+  }
+
+  return rows.join('\n');
 }
 
 // Render timer screen (RUNNING/PAUSED/DONE state) - FULL SCREEN LARGE
@@ -145,21 +154,13 @@ async function renderTimerScreen(
   if (!bridge) return;
 
   try {
-    // Use large format with spaces between digits
-    const timeText = formatTimeLarge(remainingSeconds);
-    
-    // Get padding that fits in container without scrollbar
-    const padding = getTimerPadding();
-    
-    // More horizontal padding to really center the larger text
-    const horizontalPadding = '                              '; // ~30 spaces
-    
-    let content = `${padding.top}${horizontalPadding}${timeText}${padding.bottom}`;
-    
+    const timerBlock = buildLargeTimerBlock(remainingSeconds);
+    let content = `\n${timerBlock}\n`;
+
     if (state === TimerState.PAUSED) {
-      content = `${padding.top}${horizontalPadding}${timeText}\n\n${horizontalPadding}PAUSED${padding.bottom}`;
+      content = `\n${timerBlock}\nPAUSED`;
     } else if (state === TimerState.DONE && isBlinkingVisible) {
-      content = `${padding.top}${horizontalPadding}${timeText}\n\n${horizontalPadding}COMPLETATO${padding.bottom}`;
+      content = `\n${timerBlock}\nCOMPLETATO`;
     }
 
     const textContainer: any = {
@@ -199,19 +200,13 @@ function updateTimerScreen(
   if (!bridge) return;
 
   try {
-    // Use large format with spaces between digits
-    const timeText = formatTimeLarge(remainingSeconds);
-    
-    // Get padding that fits in container without scrollbar
-    const padding = getTimerPadding();
-    const horizontalPadding = '                        '; // ~24 spaces
-    
-    let content = `${padding.top}${horizontalPadding}${timeText}${padding.bottom}`;
-    
+    const timerBlock = buildLargeTimerBlock(remainingSeconds);
+    let content = `\n${timerBlock}\n`;
+
     if (state === TimerState.PAUSED) {
-      content = `${padding.top}${horizontalPadding}${timeText}\n\n${horizontalPadding}PAUSED${padding.bottom}`;
+      content = `\n${timerBlock}\nPAUSED`;
     } else if (state === TimerState.DONE && isBlinkingVisible) {
-      content = `${padding.top}${horizontalPadding}${timeText}\n\n${horizontalPadding}COMPLETATO${padding.bottom}`;
+      content = `\n${timerBlock}\nCOMPLETATO`;
     }
 
     const metrics = getTextMetrics(content);
