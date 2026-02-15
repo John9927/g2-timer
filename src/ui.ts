@@ -113,67 +113,74 @@ export function renderUI(
 }
 
 // Create initial page containers
-export function createPageContainers(bridge: any): void {
-  if (!bridge) return;
+export async function createPageContainers(bridge: any): Promise<boolean> {
+  if (!bridge) return false;
 
   try {
-    bridge.createStartUpPageContainer({
-      containers: [
-        // Title
-        {
-          containerID: CONTAINER_IDS.TITLE,
-          containerName: CONTAINER_NAMES.TITLE,
-          containerType: 'TextContainer',
-          x: LAYOUT.PADDING_X,
-          y: LAYOUT.TITLE_Y,
-          width: CANVAS_WIDTH - LAYOUT.PADDING_X * 2,
-          height: LAYOUT.TITLE_HEIGHT,
-          fontSize: 24,
-          fontColor: [0, 255, 0], // Green
-          textAlign: 'center',
-        },
-        // Time display
-        {
-          containerID: CONTAINER_IDS.TIME_DISPLAY,
-          containerName: CONTAINER_NAMES.TIME_DISPLAY,
-          containerType: 'TextContainer',
-          x: LAYOUT.PADDING_X,
-          y: LAYOUT.TIME_Y,
-          width: CANVAS_WIDTH - LAYOUT.PADDING_X * 2,
-          height: LAYOUT.TIME_HEIGHT,
-          fontSize: 48,
-          fontColor: [0, 255, 0], // Green
-          textAlign: 'center',
-        },
-        // Preset row
-        {
-          containerID: CONTAINER_IDS.PRESET_ROW,
-          containerName: CONTAINER_NAMES.PRESET_ROW,
-          containerType: 'TextContainer',
-          x: LAYOUT.PADDING_X,
-          y: LAYOUT.PRESET_Y,
-          width: CANVAS_WIDTH - LAYOUT.PADDING_X * 2,
-          height: LAYOUT.PRESET_HEIGHT,
-          fontSize: 18,
-          fontColor: [0, 255, 0], // Green
-          textAlign: 'center',
-        },
-        // Status
-        {
-          containerID: CONTAINER_IDS.STATUS,
-          containerName: CONTAINER_NAMES.STATUS,
-          containerType: 'TextContainer',
-          x: LAYOUT.PADDING_X,
-          y: LAYOUT.STATUS_Y,
-          width: CANVAS_WIDTH - LAYOUT.PADDING_X * 2 - LAYOUT.STATUS_ICON_SIZE - 10,
-          height: LAYOUT.STATUS_HEIGHT,
-          fontSize: 16,
-          fontColor: [0, 255, 0], // Green
-          textAlign: 'left',
-        },
-      ],
-    });
+    // Create text containers following the SDK structure
+    // Based on the existing project, use minimal required properties
+    const textContainers = [
+      // Title
+      {
+        containerID: CONTAINER_IDS.TITLE,
+        containerName: CONTAINER_NAMES.TITLE,
+        xPosition: LAYOUT.PADDING_X,
+        yPosition: LAYOUT.TITLE_Y,
+        width: CANVAS_WIDTH - LAYOUT.PADDING_X * 2,
+        height: LAYOUT.TITLE_HEIGHT,
+        content: 'TIMER',
+        isEventCapture: 1, // Enable tap events
+        paddingLength: 5,
+      },
+      // Time display
+      {
+        containerID: CONTAINER_IDS.TIME_DISPLAY,
+        containerName: CONTAINER_NAMES.TIME_DISPLAY,
+        xPosition: LAYOUT.PADDING_X,
+        yPosition: LAYOUT.TIME_Y,
+        width: CANVAS_WIDTH - LAYOUT.PADDING_X * 2,
+        height: LAYOUT.TIME_HEIGHT,
+        content: '05:00',
+        isEventCapture: 1, // Enable tap events
+        paddingLength: 5,
+      },
+      // Preset row
+      {
+        containerID: CONTAINER_IDS.PRESET_ROW,
+        containerName: CONTAINER_NAMES.PRESET_ROW,
+        xPosition: LAYOUT.PADDING_X,
+        yPosition: LAYOUT.PRESET_Y,
+        width: CANVAS_WIDTH - LAYOUT.PADDING_X * 2,
+        height: LAYOUT.PRESET_HEIGHT,
+        content: '1 3 5 10 15 30 60',
+        isEventCapture: 1, // Enable tap events
+        paddingLength: 5,
+      },
+      // Status
+      {
+        containerID: CONTAINER_IDS.STATUS,
+        containerName: CONTAINER_NAMES.STATUS,
+        xPosition: LAYOUT.PADDING_X,
+        yPosition: LAYOUT.STATUS_Y,
+        width: CANVAS_WIDTH - LAYOUT.PADDING_X * 2 - LAYOUT.STATUS_ICON_SIZE - 10,
+        height: LAYOUT.STATUS_HEIGHT,
+        content: 'IDLE',
+        isEventCapture: 1, // Enable tap events
+        paddingLength: 5,
+      },
+    ];
+
+    const container = {
+      containerTotalNum: textContainers.length,
+      textObject: textContainers,
+    };
+
+    const result = await bridge.createStartUpPageContainer(container);
+    console.log('CreateStartUpPageContainer result:', result);
+    // StartUpPageCreateResult.success is typically 0
+    return result === StartUpPageCreateResult.success || result === 0 || result === 'success';
   } catch (error) {
     console.error('Error creating page containers:', error);
+    return false;
   }
 }

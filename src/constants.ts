@@ -5,13 +5,13 @@ export const CANVAS_HEIGHT = 288;
 // Timer presets in minutes
 export const PRESETS = [1, 3, 5, 10, 15, 30, 60] as const;
 
-// Container IDs and names
+// Container IDs and names (IDs must be numeric)
 export const CONTAINER_IDS = {
-  TITLE: 'title',
-  TIME_DISPLAY: 'time-display',
-  PRESET_ROW: 'preset-row',
-  STATUS: 'status',
-  STATUS_ICON: 'status-icon',
+  TITLE: 1,
+  TIME_DISPLAY: 2,
+  PRESET_ROW: 3,
+  STATUS: 4,
+  STATUS_ICON: 5,
 } as const;
 
 export const CONTAINER_NAMES = {

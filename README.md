@@ -81,6 +81,16 @@ The built files will be in the `dist` directory.
 npm run preview
 ```
 
+### Generate QR Code for Vercel Deployment
+
+If you've deployed the app to Vercel at `https://g2-timer.vercel.app/`, you can generate a QR code for easy installation:
+
+```bash
+npm run qr:vercel
+```
+
+This will display a QR code that you can scan with the Even app on your phone to install the G2 Timer app on your glasses.
+
 ## Controls
 
 The timer supports the following interactions:

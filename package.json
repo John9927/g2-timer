@@ -9,7 +9,8 @@
     "dev:qr": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && node scripts/show-qr.js\"",
     "build": "vite build",
     "preview": "vite preview --host",
-    "qr": "node scripts/show-qr.js"
+    "qr": "node scripts/show-qr.js",
+    "qr:vercel": "node scripts/generate-qr-vercel.js"
   },
   "dependencies": {
     "@evenrealities/even_hub_sdk": "^0.0.7"

@@ -1,4 +1,4 @@
-import { waitForEvenAppBridge } from '@evenrealities/even_hub_sdk';
+import { waitForEvenAppBridge, StartUpPageCreateResult } from '@evenrealities/even_hub_sdk';
 import { TimerStateManager } from './timerState';
 import { createPageContainers, renderUI } from './ui';
 import { TimerState, CONTAINER_IDS } from './constants';
@@ -43,7 +43,11 @@ async function init() {
     });
 
     // Create page containers once
-    createPageContainers(bridge);
+    const containersCreated = await createPageContainers(bridge);
+    if (!containersCreated) {
+      console.error('Failed to create page containers');
+      return;
+    }
 
     // Initial render
     if (timerState) {
@@ -120,10 +124,13 @@ function setupEventHandlers() {
 }
 
 // Handle container-specific taps
-function handleContainerTap(containerID: string, tapCount: number) {
+function handleContainerTap(containerID: number | string, tapCount: number) {
   if (!timerState) return;
 
-  if (containerID === CONTAINER_IDS.PRESET_ROW) {
+  // Convert to number if string
+  const id = typeof containerID === 'string' ? parseInt(containerID, 10) : containerID;
+
+  if (id === CONTAINER_IDS.PRESET_ROW) {
     // Tap on preset row: cycle preset
     timerState.cyclePreset();
   } else if (containerID === CONTAINER_IDS.TIME_DISPLAY) {
