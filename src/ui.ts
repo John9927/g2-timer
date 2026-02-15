@@ -114,33 +114,27 @@ function renderPresetSelection(
   }
 }
 
-// Big ASCII-like digits for a larger timer without relying on font scaling.
-const BIG_DIGITS: Record<string, string[]> = {
-  '0': [' ### ', '#   #', '#   #', '#   #', ' ### '],
-  '1': ['  #  ', ' ##  ', '  #  ', '  #  ', ' ### '],
-  '2': [' ### ', '#   #', '   # ', '  #  ', '#####'],
-  '3': ['#### ', '    #', ' ### ', '    #', '#### '],
-  '4': ['#   #', '#   #', '#####', '    #', '    #'],
-  '5': ['#####', '#    ', '#### ', '    #', '#### '],
-  '6': [' ### ', '#    ', '#### ', '#   #', ' ### '],
-  '7': ['#####', '    #', '   # ', '  #  ', '  #  '],
-  '8': [' ### ', '#   #', ' ### ', '#   #', ' ### '],
-  '9': [' ### ', '#   #', ' ####', '    #', ' ### '],
-  ':': ['  ', '##', '  ', '##', '  '],
+// Use full-width characters to make the timer visually larger but still readable.
+const FULLWIDTH_MAP: Record<string, string> = {
+  '0': '０',
+  '1': '１',
+  '2': '２',
+  '3': '３',
+  '4': '４',
+  '5': '５',
+  '6': '６',
+  '7': '７',
+  '8': '８',
+  '9': '９',
+  ':': '：',
 };
 
-function buildLargeTimerBlock(seconds: number): string {
+function buildLargeTimerLine(seconds: number): string {
   const time = formatTime(seconds); // MM:SS
-  const rows = ['', '', '', '', ''];
-
-  for (const ch of time) {
-    const glyph = BIG_DIGITS[ch] || BIG_DIGITS['0'];
-    for (let i = 0; i < 5; i++) {
-      rows[i] += `${glyph[i]}  `;
-    }
-  }
-
-  return rows.join('\n');
+  return time
+    .split('')
+    .map((ch) => FULLWIDTH_MAP[ch] || ch)
+    .join('');
 }
 
 // Render timer screen (RUNNING/PAUSED/DONE state) - FULL SCREEN LARGE
@@ -154,13 +148,14 @@ async function renderTimerScreen(
   if (!bridge) return;
 
   try {
-    const timerBlock = buildLargeTimerBlock(remainingSeconds);
-    let content = `\n${timerBlock}\n`;
+    const largeTime = buildLargeTimerLine(remainingSeconds);
+    // Keep a compact line count to avoid vertical scrollbar.
+    let content = `\n\n\n        ${largeTime}\n\n`;
 
     if (state === TimerState.PAUSED) {
-      content = `\n${timerBlock}\nPAUSED`;
+      content = `\n\n\n        ${largeTime}\n\n        PAUSED`;
     } else if (state === TimerState.DONE && isBlinkingVisible) {
-      content = `\n${timerBlock}\nCOMPLETATO`;
+      content = `\n\n\n        ${largeTime}\n\n      COMPLETATO`;
     }
 
     const textContainer: any = {
@@ -200,13 +195,13 @@ function updateTimerScreen(
   if (!bridge) return;
 
   try {
-    const timerBlock = buildLargeTimerBlock(remainingSeconds);
-    let content = `\n${timerBlock}\n`;
+    const largeTime = buildLargeTimerLine(remainingSeconds);
+    let content = `\n\n\n        ${largeTime}\n\n`;
 
     if (state === TimerState.PAUSED) {
-      content = `\n${timerBlock}\nPAUSED`;
+      content = `\n\n\n        ${largeTime}\n\n        PAUSED`;
     } else if (state === TimerState.DONE && isBlinkingVisible) {
-      content = `\n${timerBlock}\nCOMPLETATO`;
+      content = `\n\n\n        ${largeTime}\n\n      COMPLETATO`;
     }
 
     const metrics = getTextMetrics(content);
