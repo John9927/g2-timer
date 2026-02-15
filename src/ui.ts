@@ -432,19 +432,25 @@ async function applyTimerImages(bridge: any, remainingSeconds: number, forceAll:
   const previousSecondTens = lastDisplayedTime[3];
   const previousSecondOnes = lastDisplayedTime[4];
 
-  if (forceAll || !areTimerImagesVisible || minutes !== previousMinutes) {
-    const mmBytes = await getMinutesPngBytes(minutes);
-    await pushImage(bridge, MM_CONTAINER_ID, MM_CONTAINER_NAME, mmBytes);
+  const shouldUpdateMM = forceAll || !areTimerImagesVisible || minutes !== previousMinutes;
+  const shouldUpdateST = forceAll || !areTimerImagesVisible || secondTens !== previousSecondTens;
+  const shouldUpdateSO = forceAll || !areTimerImagesVisible || secondOnes !== previousSecondOnes;
+
+  // Update from least-significant to most-significant digit block.
+  // This avoids showing the new minute with stale seconds (e.g. 2:00 before 2:59).
+  if (shouldUpdateSO) {
+    const soBytes = await getSecondOnesPngBytes(secondOnes);
+    await pushImage(bridge, SO_CONTAINER_ID, SO_CONTAINER_NAME, soBytes);
   }
 
-  if (forceAll || !areTimerImagesVisible || secondTens !== previousSecondTens) {
+  if (shouldUpdateST) {
     const stBytes = await getSecondTensPngBytes(secondTens);
     await pushImage(bridge, ST_CONTAINER_ID, ST_CONTAINER_NAME, stBytes);
   }
 
-  if (forceAll || !areTimerImagesVisible || secondOnes !== previousSecondOnes) {
-    const soBytes = await getSecondOnesPngBytes(secondOnes);
-    await pushImage(bridge, SO_CONTAINER_ID, SO_CONTAINER_NAME, soBytes);
+  if (shouldUpdateMM) {
+    const mmBytes = await getMinutesPngBytes(minutes);
+    await pushImage(bridge, MM_CONTAINER_ID, MM_CONTAINER_NAME, mmBytes);
   }
 
   lastDisplayedTime = time;
