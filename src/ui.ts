@@ -106,6 +106,17 @@ function formatTimeLarge(seconds: number): string {
   return `${minStr[0]} ${minStr[1]} : ${secStr[0]} ${secStr[1]}`;
 }
 
+// Calculate optimal padding to fit content without scrollbar
+// Container height is 288px, we need to leave space for text
+function getTimerPadding(): { top: string; bottom: string } {
+  // Use fewer newlines to ensure content fits in 288px height
+  // Approximately 8-10 lines of text fit in the container
+  // Timer text is about 1-2 lines, so we can use 3-4 newlines top and bottom
+  const topPadding = '\n\n\n\n'; // 4 newlines
+  const bottomPadding = '\n\n\n\n'; // 4 newlines
+  return { top: topPadding, bottom: bottomPadding };
+}
+
 // Render timer screen (RUNNING/PAUSED/DONE state) - FULL SCREEN LARGE
 // Use rebuildPageContainer only when switching from preset to timer
 async function renderTimerScreen(
@@ -120,20 +131,18 @@ async function renderTimerScreen(
     // Use large format with spaces between digits
     const timeText = formatTimeLarge(remainingSeconds);
     
-    // Create a FULL SCREEN timer with maximum spacing
-    // Use many more newlines to really center it and make it feel bigger
-    const verticalPadding = '\n\n\n\n\n\n\n\n\n\n\n\n\n\n'; // 14 newlines top
-    const verticalPaddingBottom = '\n\n\n\n\n\n\n\n\n\n\n\n\n\n'; // 14 newlines bottom
+    // Get padding that fits in container without scrollbar
+    const padding = getTimerPadding();
     
-    // More horizontal padding to really center it
+    // Horizontal padding to center it
     const horizontalPadding = '                        '; // ~24 spaces
     
-    let content = `${verticalPadding}${horizontalPadding}${timeText}${verticalPaddingBottom}`;
+    let content = `${padding.top}${horizontalPadding}${timeText}${padding.bottom}`;
     
     if (state === TimerState.PAUSED) {
-      content = `${verticalPadding}${horizontalPadding}${timeText}\n\n${horizontalPadding}PAUSED${verticalPaddingBottom}`;
+      content = `${padding.top}${horizontalPadding}${timeText}\n\n${horizontalPadding}PAUSED${padding.bottom}`;
     } else if (state === TimerState.DONE && isBlinkingVisible) {
-      content = `${verticalPadding}${horizontalPadding}${timeText}\n\n${horizontalPadding}COMPLETATO${verticalPaddingBottom}`;
+      content = `${padding.top}${horizontalPadding}${timeText}\n\n${horizontalPadding}COMPLETATO${padding.bottom}`;
     }
 
     const textContainer: any = {
@@ -176,16 +185,16 @@ function updateTimerScreen(
     // Use large format with spaces between digits
     const timeText = formatTimeLarge(remainingSeconds);
     
-    const verticalPadding = '\n\n\n\n\n\n\n\n\n\n\n\n\n\n'; // 14 newlines
-    const verticalPaddingBottom = '\n\n\n\n\n\n\n\n\n\n\n\n\n\n'; // 14 newlines
+    // Get padding that fits in container without scrollbar
+    const padding = getTimerPadding();
     const horizontalPadding = '                        '; // ~24 spaces
     
-    let content = `${verticalPadding}${horizontalPadding}${timeText}${verticalPaddingBottom}`;
+    let content = `${padding.top}${horizontalPadding}${timeText}${padding.bottom}`;
     
     if (state === TimerState.PAUSED) {
-      content = `${verticalPadding}${horizontalPadding}${timeText}\n\n${horizontalPadding}PAUSED${verticalPaddingBottom}`;
+      content = `${padding.top}${horizontalPadding}${timeText}\n\n${horizontalPadding}PAUSED${padding.bottom}`;
     } else if (state === TimerState.DONE && isBlinkingVisible) {
-      content = `${verticalPadding}${horizontalPadding}${timeText}\n\n${horizontalPadding}COMPLETATO${verticalPaddingBottom}`;
+      content = `${padding.top}${horizontalPadding}${timeText}\n\n${horizontalPadding}COMPLETATO${padding.bottom}`;
     }
 
     const metrics = getTextMetrics(content);
