@@ -60,31 +60,205 @@ function buildPresetContent(selectedPreset: number): string {
   return `Scegli minuti\n\n${lines.join('\n')}\n\nSwipe: cambia  Tap: avvia`;
 }
 
-/* ─── canvas → base64 PNG (cached canvas, zero logs) ─────────────────── */
+/* ─── pixel-based digit definitions (5x7 grid, scalable) ────────────── */
+
+// Each digit is a 5x7 grid (5 wide, 7 tall)
+// 1 = pixel ON (white), 0 = pixel OFF (black/transparent)
+const DIGIT_PATTERNS: { [key: string]: number[][] } = {
+  '0': [
+    [1,1,1,1,1],
+    [1,0,0,0,1],
+    [1,0,0,0,1],
+    [1,0,0,0,1],
+    [1,0,0,0,1],
+    [1,0,0,0,1],
+    [1,1,1,1,1],
+  ],
+  '1': [
+    [0,0,1,0,0],
+    [0,1,1,0,0],
+    [0,0,1,0,0],
+    [0,0,1,0,0],
+    [0,0,1,0,0],
+    [0,0,1,0,0],
+    [0,1,1,1,0],
+  ],
+  '2': [
+    [1,1,1,1,1],
+    [0,0,0,0,1],
+    [0,0,0,0,1],
+    [1,1,1,1,1],
+    [1,0,0,0,0],
+    [1,0,0,0,0],
+    [1,1,1,1,1],
+  ],
+  '3': [
+    [1,1,1,1,1],
+    [0,0,0,0,1],
+    [0,0,0,0,1],
+    [1,1,1,1,1],
+    [0,0,0,0,1],
+    [0,0,0,0,1],
+    [1,1,1,1,1],
+  ],
+  '4': [
+    [1,0,0,0,1],
+    [1,0,0,0,1],
+    [1,0,0,0,1],
+    [1,1,1,1,1],
+    [0,0,0,0,1],
+    [0,0,0,0,1],
+    [0,0,0,0,1],
+  ],
+  '5': [
+    [1,1,1,1,1],
+    [1,0,0,0,0],
+    [1,0,0,0,0],
+    [1,1,1,1,1],
+    [0,0,0,0,1],
+    [0,0,0,0,1],
+    [1,1,1,1,1],
+  ],
+  '6': [
+    [1,1,1,1,1],
+    [1,0,0,0,0],
+    [1,0,0,0,0],
+    [1,1,1,1,1],
+    [1,0,0,0,1],
+    [1,0,0,0,1],
+    [1,1,1,1,1],
+  ],
+  '7': [
+    [1,1,1,1,1],
+    [0,0,0,0,1],
+    [0,0,0,0,1],
+    [0,0,0,1,0],
+    [0,0,1,0,0],
+    [0,1,0,0,0],
+    [1,0,0,0,0],
+  ],
+  '8': [
+    [1,1,1,1,1],
+    [1,0,0,0,1],
+    [1,0,0,0,1],
+    [1,1,1,1,1],
+    [1,0,0,0,1],
+    [1,0,0,0,1],
+    [1,1,1,1,1],
+  ],
+  '9': [
+    [1,1,1,1,1],
+    [1,0,0,0,1],
+    [1,0,0,0,1],
+    [1,1,1,1,1],
+    [0,0,0,0,1],
+    [0,0,0,0,1],
+    [1,1,1,1,1],
+  ],
+  ':': [
+    [0,0,0,0,0],
+    [0,0,1,0,0],
+    [0,0,0,0,0],
+    [0,0,0,0,0],
+    [0,0,0,0,0],
+    [0,0,1,0,0],
+    [0,0,0,0,0],
+  ],
+};
+
+/**
+ * Draw a pixel-based digit/character on the canvas.
+ * @param ctx Canvas context
+ * @param char Character to draw ('0'-'9' or ':')
+ * @param x X position (left edge)
+ * @param y Y position (top edge)
+ * @param pixelSize Size of each scaled pixel
+ */
+function drawPixelDigit(
+  ctx: CanvasRenderingContext2D,
+  char: string,
+  x: number,
+  y: number,
+  pixelSize: number,
+): void {
+  const pattern = DIGIT_PATTERNS[char];
+  if (!pattern) return;
+
+  const baseWidth = pattern[0].length; // 5
+  const baseHeight = pattern.length;   // 7
+
+  // Draw each pixel in the pattern
+  for (let py = 0; py < baseHeight; py++) {
+    for (let px = 0; px < baseWidth; px++) {
+      if (pattern[py][px] === 1) {
+        // Draw a scaled pixel
+        ctx.fillRect(
+          x + px * pixelSize,
+          y + py * pixelSize,
+          pixelSize,
+          pixelSize
+        );
+      }
+    }
+  }
+}
+
+/* ─── canvas → base64 PNG (pixel-based rendering) ─────────────────── */
 
 function renderTimerImage(seconds: number, status?: string): string {
   const c = getCtx();
   if (!c || !_canvas) return '';
   const W = _canvas.width, H = _canvas.height;
 
-  // Black = transparent on G2 (no LED light)
+  // Black background (transparent on G2)
   c.fillStyle = '#000';
   c.fillRect(0, 0, W, H);
 
-  // White = visible on G2 (green LED)
+  // White pixels (visible on G2)
   c.fillStyle = '#FFF';
-  c.textAlign = 'center';
-  c.textBaseline = 'middle';
 
-  const time = formatTime(seconds);
+  const time = formatTime(seconds); // "MM:SS"
+  
+  // Calculate scale: we want digits to be as large as possible
+  // Each digit is 5x7 base, we'll scale it up
+  // With scale=4, each digit becomes 20x28 pixels
+  // With scale=5, each digit becomes 25x35 pixels
+  // With scale=6, each digit becomes 30x42 pixels
+  // Let's use scale=6 for maximum size (30x42 per digit)
+  const scale = 6;
+  const pixelSize = scale;
+  const digitWidth = 5 * pixelSize;   // 30
+  const digitHeight = 7 * pixelSize;  // 42
+  const colonWidth = 2 * pixelSize;   // 12 (colon is narrower)
+  const spacing = 2 * pixelSize;      // 12 (space between digits)
+
+  // Calculate total width: MM:SS = 2 digits + colon + 2 digits = 4 digits + 1 colon
+  const totalWidth = 4 * digitWidth + colonWidth + 3 * spacing; // ~174 pixels
+  const startX = (W - totalWidth) / 2;
+  const startY = (H - digitHeight) / 2;
+
+  // Draw each character
+  let currentX = startX;
+  for (let i = 0; i < time.length; i++) {
+    const char = time[i];
+    if (char === ':') {
+      drawPixelDigit(c, ':', currentX, startY, pixelSize);
+      currentX += colonWidth + spacing;
+    } else {
+      drawPixelDigit(c, char, currentX, startY, pixelSize);
+      currentX += digitWidth + spacing;
+    }
+  }
+
+  // Draw status text below if needed (using small pixel font)
   if (status) {
-    c.font = 'bold 60px monospace';
-    c.fillText(time, W / 2, 38);
-    c.font = 'bold 18px monospace';
-    c.fillText(status, W / 2, 80);
-  } else {
-    c.font = 'bold 72px monospace';
-    c.fillText(time, W / 2, H / 2 + 2);
+    const statusY = startY + digitHeight + 20;
+    // For status, use smaller scale (scale=2, so 10x14 per char)
+    // We'll use a simple text fallback for status since it's small
+    c.font = 'bold 14px monospace';
+    c.textAlign = 'center';
+    c.textBaseline = 'top';
+    c.fillText(status, W / 2, statusY);
   }
 
   return _canvas.toDataURL('image/png');
