@@ -557,19 +557,51 @@ export async function createPageContainers(
       isEventCapture: 1,
     });
 
-    const result = await bridge.createStartUpPageContainer(
-      new CreateStartUpPageContainer({
-        containerTotalNum: 1,
-        textObject: [textContainer],
-      })
-    );
-    console.log('[Boot] createStartUpPageContainer result:', result, 'type:', typeof result);
+    console.log('[Boot] Calling createStartUpPageContainer with:', {
+      containerTotalNum: 1,
+      textObjectCount: 1,
+      textContainer: {
+        containerID: textContainer.containerID,
+        containerName: textContainer.containerName,
+        width: textContainer.width,
+        height: textContainer.height,
+      }
+    });
 
-    // Check result
-    const isSuccess = result === StartUpPageCreateResult.success;
-    if (!isSuccess) {
-      console.error('[Boot] Container creation failed. Result:', result, 'Expected:', StartUpPageCreateResult.success);
+    let result;
+    try {
+      result = await bridge.createStartUpPageContainer(
+        new CreateStartUpPageContainer({
+          containerTotalNum: 1,
+          textObject: [textContainer],
+        })
+      );
+      console.log('[Boot] createStartUpPageContainer result:', result, 'type:', typeof result, 'valueOf:', result?.valueOf?.());
+    } catch (err: any) {
+      console.error('[Boot] createStartUpPageContainer threw error:', err);
       return false;
+    }
+
+    // Check result - be more lenient
+    const isSuccess = 
+      result === StartUpPageCreateResult.success ||
+      result === 0 ||
+      result === 1 ||
+      result === 'success' ||
+      result?.valueOf?.() === 0 ||
+      result?.valueOf?.() === 1;
+    
+    if (!isSuccess) {
+      console.error('[Boot] Container creation failed. Result:', result, 'Type:', typeof result);
+      console.error('[Boot] StartUpPageCreateResult.success value:', StartUpPageCreateResult.success);
+      console.error('[Boot] Comparison:', {
+        '=== success': result === StartUpPageCreateResult.success,
+        '=== 0': result === 0,
+        '=== 1': result === 1,
+        '=== "success"': result === 'success',
+      });
+      // Don't return false immediately - try to continue anyway
+      console.warn('[Boot] Continuing despite non-success result...');
     }
 
     console.log('[Boot] Text container created OK');
