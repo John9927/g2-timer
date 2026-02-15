@@ -96,6 +96,16 @@ function renderPresetSelection(
   }
 }
 
+// Format time with extra spacing between digits to make it appear larger
+function formatTimeLarge(seconds: number): string {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  const minStr = String(mins).padStart(2, '0');
+  const secStr = String(secs).padStart(2, '0');
+  // Add spaces between each digit to make it appear larger
+  return `${minStr[0]} ${minStr[1]} : ${secStr[0]} ${secStr[1]}`;
+}
+
 // Render timer screen (RUNNING/PAUSED/DONE state) - FULL SCREEN LARGE
 // Use rebuildPageContainer only when switching from preset to timer
 async function renderTimerScreen(
@@ -107,12 +117,16 @@ async function renderTimerScreen(
   if (!bridge) return;
 
   try {
-    const timeText = formatTime(remainingSeconds);
+    // Use large format with spaces between digits
+    const timeText = formatTimeLarge(remainingSeconds);
     
     // Create a FULL SCREEN timer with maximum spacing
-    const verticalPadding = '\n\n\n\n\n\n\n\n\n\n'; // 10 newlines top
-    const verticalPaddingBottom = '\n\n\n\n\n\n\n\n\n\n'; // 10 newlines bottom
-    const horizontalPadding = '                    '; // ~20 spaces
+    // Use many more newlines to really center it and make it feel bigger
+    const verticalPadding = '\n\n\n\n\n\n\n\n\n\n\n\n\n\n'; // 14 newlines top
+    const verticalPaddingBottom = '\n\n\n\n\n\n\n\n\n\n\n\n\n\n'; // 14 newlines bottom
+    
+    // More horizontal padding to really center it
+    const horizontalPadding = '                        '; // ~24 spaces
     
     let content = `${verticalPadding}${horizontalPadding}${timeText}${verticalPaddingBottom}`;
     
@@ -159,11 +173,12 @@ function updateTimerScreen(
   if (!bridge) return;
 
   try {
-    const timeText = formatTime(remainingSeconds);
+    // Use large format with spaces between digits
+    const timeText = formatTimeLarge(remainingSeconds);
     
-    const verticalPadding = '\n\n\n\n\n\n\n\n\n\n';
-    const verticalPaddingBottom = '\n\n\n\n\n\n\n\n\n\n';
-    const horizontalPadding = '                    ';
+    const verticalPadding = '\n\n\n\n\n\n\n\n\n\n\n\n\n\n'; // 14 newlines
+    const verticalPaddingBottom = '\n\n\n\n\n\n\n\n\n\n\n\n\n\n'; // 14 newlines
+    const horizontalPadding = '                        '; // ~24 spaces
     
     let content = `${verticalPadding}${horizontalPadding}${timeText}${verticalPaddingBottom}`;
     
