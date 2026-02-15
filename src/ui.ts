@@ -69,16 +69,18 @@ function renderPresetSelection(
   if (!bridge) return;
 
   try {
-    // Create beautiful preset selection screen
+    // Create compact preset selection screen to avoid scrollbar
+    // Use fewer lines and more compact format
     const presetLines = PRESETS.map((preset) => {
       if (preset === selectedPreset) {
-        // Selected preset: highlighted with brackets and spacing
-        return `  > ${preset} min  <`;
+        // Selected preset: highlighted with brackets
+        return `> ${preset} <`;
       }
-      return `    ${preset} min`;
+      return `  ${preset}`;
     }).join('\n');
 
-    const content = `Scegli i minuti\n\n${presetLines}\n\nSwipe per cambiare\nTocca per avviare`;
+    // Reduced spacing to fit in container without scrollbar
+    const content = `Scegli minuti\n\n${presetLines}\n\nSwipe: cambia\nTap: avvia`;
     const metrics = getTextMetrics(content);
 
     console.log('[UI] Updating preset selection');
@@ -279,14 +281,15 @@ export async function createPageContainers(bridge: any, selectedPreset: number =
 
   try {
     // Create preset selection screen directly as initial view
+    // Use compact format to avoid scrollbar
     const presetLines = PRESETS.map((preset) => {
       if (preset === selectedPreset) {
-        return `  > ${preset} min  <`;
+        return `> ${preset} <`;
       }
-      return `    ${preset} min`;
+      return `  ${preset}`;
     }).join('\n');
 
-    const content = `Scegli i minuti\n\n${presetLines}\n\nSwipe per cambiare\nTocca per avviare`;
+    const content = `Scegli minuti\n\n${presetLines}\n\nSwipe: cambia\nTap: avvia`;
 
     const textContainer: any = {
       xPosition: 0,
