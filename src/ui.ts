@@ -64,11 +64,37 @@ export function renderUI(
   state: TimerState,
   selectedPreset: number,
   remainingSeconds: number,
-  isBlinkingVisible: boolean = true
+  isBlinkingVisible: boolean = true,
+  debugMessage?: string
 ): void {
   if (!bridge) return;
 
   try {
+    // If there's a debug message, show it on the status container temporarily
+    if (debugMessage) {
+      bridge.textContainerUpgrade({
+        containerID: CONTAINER_IDS.STATUS,
+        containerName: CONTAINER_NAMES.STATUS,
+        content: debugMessage,
+        contentLength: debugMessage.length,
+        contentOffset: 0,
+      });
+      // After 2 seconds, restore normal status
+      setTimeout(() => {
+        if (bridge) {
+          const statusText = getStatusText(state);
+          const displayStatusText = isBlinkingVisible ? statusText : '';
+          const statusMetrics = getTextMetrics(displayStatusText);
+          bridge.textContainerUpgrade({
+            containerID: CONTAINER_IDS.STATUS,
+            containerName: CONTAINER_NAMES.STATUS,
+            content: displayStatusText,
+            contentLength: statusMetrics.contentLength,
+            contentOffset: statusMetrics.contentOffset,
+          });
+        }
+      }, 2000);
+    }
     // Update title
     const titleText = 'TIMER';
     const titleMetrics = getTextMetrics(titleText);
@@ -207,6 +233,10 @@ export async function createPageContainers(bridge: any): Promise<boolean> {
     const result = await bridge.createStartUpPageContainer(container);
     console.log('[Boot] 📊 CreateStartUpPageContainer result:', result);
     console.log('[Boot] 📊 StartUpPageCreateResult.success:', StartUpPageCreateResult.success);
+    console.log('[Boot] 📊 Result type:', typeof result);
+    console.log('[Boot] 📊 Result === 0:', result === 0);
+    console.log('[Boot] 📊 Result === 1:', result === 1);
+    console.log('[Boot] 📊 Result === StartUpPageCreateResult.success:', result === StartUpPageCreateResult.success);
     
     // On real hardware, sometimes we need to wait a bit for containers to be ready
     // The result might be successful but containers need time to initialize

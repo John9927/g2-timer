@@ -7,6 +7,21 @@ let bridge: any = null;
 let timerState: TimerStateManager | null = null;
 let isInitialized = false;
 let isInForeground = true;
+let debugLog: string[] = [];
+const MAX_DEBUG_LOG = 5; // Keep last 5 log messages
+
+// Debug logging function that shows on glasses display
+function debugLogToDisplay(message: string) {
+  const timestamp = new Date().toLocaleTimeString();
+  const logMessage = `[${timestamp}] ${message}`;
+  console.log(logMessage);
+  debugLog.push(logMessage);
+  if (debugLog.length > MAX_DEBUG_LOG) {
+    debugLog.shift();
+  }
+  // Update debug view in browser
+  updateDebugView();
+}
 
 // Debug view functions for browser fallback
 function updateDebugView() {
@@ -39,14 +54,21 @@ function updateDebugView() {
     containerStatus.textContent = isInitialized ? 'Containers: Created ✓' : 'Containers: --';
     containerStatus.className = isInitialized ? 'debug-line success' : 'debug-line';
   }
+  
+  // Show debug logs in browser
+  const debugLogElement = document.getElementById('debug-logs');
+  if (debugLogElement) {
+    debugLogElement.innerHTML = debugLog.slice(-3).map(log => `<div class="debug-line" style="font-size: 12px; color: #888;">${log}</div>`).join('');
+  }
 }
 
 // Initialize the app
 async function init() {
   try {
     updateDebugView(); // Initial debug view update
-    console.log('[Boot] 🔌 Inizializzazione bridge Even...');
+    debugLogToDisplay('Inizializzazione bridge...');
     bridge = await waitForEvenAppBridge();
+    debugLogToDisplay('Bridge ricevuto');
     console.log('[Boot] ✅ Bridge Even ricevuto');
     console.log('[Boot] 📊 Bridge disponibile:', !!bridge);
     if (bridge) {
@@ -55,6 +77,7 @@ async function init() {
     updateDebugView(); // Update after bridge connection
     
     if (!bridge) {
+      debugLogToDisplay('ERRORE: Bridge non disponibile!');
       console.error('[Boot] ❌ Bridge non disponibile!');
       const bridgeStatus = document.getElementById('bridge-status');
       if (bridgeStatus) {
@@ -97,28 +120,38 @@ async function init() {
     });
 
     // Create page containers once
+    debugLogToDisplay('Creazione container...');
     const containersCreated = await createPageContainers(bridge);
     if (!containersCreated) {
+      debugLogToDisplay('ERRORE: Creazione container fallita!');
       console.error('Failed to create page containers');
+      // Show error on glasses display
+      if (bridge) {
+        renderUI(bridge, TimerState.IDLE, 5, 300, true, 'ERR: Container creation failed');
+      }
       return;
     }
+    debugLogToDisplay('Container creati OK');
 
     // IMPORTANT: Even if containers have initial content, we MUST call textContainerUpgrade
     // immediately after creation to make them visible on real hardware
     // Based on working project pattern
     if (timerState && bridge) {
+      debugLogToDisplay('Primo render...');
       // First update immediately
       renderUI(
         bridge,
         timerState.getState(),
         timerState.getSelectedPreset(),
         timerState.getRemainingSeconds(),
-        timerState.getBlinkVisibility()
+        timerState.getBlinkVisibility(),
+        'Container OK, rendering...'
       );
       
       // Also update after a small delay (like working project does)
       setTimeout(() => {
         if (timerState && bridge) {
+          debugLogToDisplay('Secondo render...');
           renderUI(
             bridge,
             timerState.getState(),
