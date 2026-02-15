@@ -1,7 +1,7 @@
-import { waitForEvenAppBridge, StartUpPageCreateResult } from '@evenrealities/even_hub_sdk';
+import { waitForEvenAppBridge } from '@evenrealities/even_hub_sdk';
 import { TimerStateManager } from './timerState';
 import { createPageContainers, renderUI } from './ui';
-import { TimerState, CONTAINER_IDS } from './constants';
+import { TimerState } from './constants';
 
 let bridge: any = null;
 let timerState: TimerStateManager | null = null;
@@ -133,24 +133,9 @@ async function init() {
     }
     debugLogToDisplay('Container creati OK');
 
-    // Initial render - container already has preset selection content
-    // Just ensure it's displayed correctly
-    if (timerState && bridge) {
-      debugLogToDisplay('Container creato, verificando display...');
-      // Small delay to ensure container is ready, then verify/update if needed
-      setTimeout(async () => {
-        if (timerState && bridge) {
-          // Update to ensure it's displayed (sometimes helps on real hardware)
-          await renderUI(
-            bridge,
-            timerState.getState(),
-            timerState.getSelectedPreset(),
-            timerState.getRemainingSeconds(),
-            timerState.getBlinkVisibility()
-          );
-        }
-      }, 100);
-    }
+    // Both containers (text + image) are now created at startup.
+    // No delay needed – preset text is already set via createStartUpPageContainer.
+    debugLogToDisplay('Container creati, display pronto');
 
     // Set up event handlers
     setupEventHandlers();
