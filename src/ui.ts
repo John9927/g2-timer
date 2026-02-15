@@ -182,12 +182,16 @@ function drawPixelDigit(
   pixelSize: number,
 ): void {
   const pattern = DIGIT_PATTERNS[char];
-  if (!pattern) return;
+  if (!pattern) {
+    console.warn('[Canvas] No pattern for char:', char);
+    return;
+  }
 
   const baseWidth = pattern[0].length; // 5
   const baseHeight = pattern.length;   // 7
 
   // Draw each pixel in the pattern
+  let pixelsDrawn = 0;
   for (let py = 0; py < baseHeight; py++) {
     for (let px = 0; px < baseWidth; px++) {
       if (pattern[py][px] === 1) {
@@ -198,8 +202,12 @@ function drawPixelDigit(
           pixelSize,
           pixelSize
         );
+        pixelsDrawn++;
       }
     }
+  }
+  if (pixelsDrawn === 0) {
+    console.warn('[Canvas] No pixels drawn for char:', char);
   }
 }
 
@@ -207,8 +215,12 @@ function drawPixelDigit(
 
 function renderTimerImage(seconds: number, status?: string): string {
   const c = getCtx();
-  if (!c || !_canvas) return '';
+  if (!c || !_canvas) {
+    console.error('[Canvas] Context or canvas not available');
+    return '';
+  }
   const W = _canvas.width, H = _canvas.height;
+  console.log('[Canvas] Rendering timer image:', { seconds, status, W, H });
 
   // Black background (transparent on G2)
   c.fillStyle = '#000';
@@ -218,13 +230,11 @@ function renderTimerImage(seconds: number, status?: string): string {
   c.fillStyle = '#FFF';
 
   const time = formatTime(seconds); // "MM:SS"
+  console.log('[Canvas] Time string:', time);
   
   // Calculate scale: we want digits to be as large as possible
   // Each digit is 5x7 base, we'll scale it up
-  // With scale=4, each digit becomes 20x28 pixels
-  // With scale=5, each digit becomes 25x35 pixels
   // With scale=6, each digit becomes 30x42 pixels
-  // Let's use scale=6 for maximum size (30x42 per digit)
   const scale = 6;
   const pixelSize = scale;
   const digitWidth = 5 * pixelSize;   // 30
@@ -237,10 +247,13 @@ function renderTimerImage(seconds: number, status?: string): string {
   const startX = (W - totalWidth) / 2;
   const startY = (H - digitHeight) / 2;
 
+  console.log('[Canvas] Layout:', { totalWidth, startX, startY, digitWidth, digitHeight });
+
   // Draw each character
   let currentX = startX;
   for (let i = 0; i < time.length; i++) {
     const char = time[i];
+    console.log('[Canvas] Drawing char:', char, 'at x:', currentX);
     if (char === ':') {
       drawPixelDigit(c, ':', currentX, startY, pixelSize);
       currentX += colonWidth + spacing;
@@ -253,15 +266,15 @@ function renderTimerImage(seconds: number, status?: string): string {
   // Draw status text below if needed (using small pixel font)
   if (status) {
     const statusY = startY + digitHeight + 20;
-    // For status, use smaller scale (scale=2, so 10x14 per char)
-    // We'll use a simple text fallback for status since it's small
     c.font = 'bold 14px monospace';
     c.textAlign = 'center';
     c.textBaseline = 'top';
     c.fillText(status, W / 2, statusY);
   }
 
-  return _canvas.toDataURL('image/png');
+  const dataURL = _canvas.toDataURL('image/png');
+  console.log('[Canvas] Image generated, length:', dataURL.length);
+  return dataURL;
 }
 
 /* ─── dataURL → Uint8Array (smaller over BLE than base64 string) ──── */
