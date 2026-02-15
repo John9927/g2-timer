@@ -33,14 +33,23 @@ export function getStatusText(state: TimerState): string {
 }
 
 // Calculate text content length and offset for textContainerUpgrade
-export function getTextMetrics(text: string): { contentLength: number; contentOffset: number } {
+export function getTextMetrics(text: string, previousText: string = ''): { contentLength: number; contentOffset: number } {
   // For Even Hub SDK, contentLength is the byte length of the text
-  // contentOffset is typically 0 for new content
+  // contentOffset should be 0 for new content or when text changes completely
   const encoder = new TextEncoder();
   const encoded = encoder.encode(text);
+  
+  // Calculate offset: if previous text is a prefix of new text, use previous length
+  // Otherwise, start from 0 (full replacement)
+  let contentOffset = 0;
+  if (previousText && text.startsWith(previousText)) {
+    const previousEncoded = encoder.encode(previousText);
+    contentOffset = previousEncoded.length;
+  }
+  
   return {
     contentLength: encoded.length,
-    contentOffset: 0,
+    contentOffset: contentOffset,
   };
 }
 
@@ -52,6 +61,14 @@ export function createStatusIcon(state: TimerState): Uint8Array | null {
   // For now, return null to avoid image updates unless needed
   // If you want to add icons, create 8x8 or 16x16 monochrome bitmaps
   return null;
+}
+
+// Store previous text values for incremental updates
+let previousTexts: Record<number, string> = {};
+
+// Reset previous texts (useful when recreating containers)
+export function resetPreviousTexts(): void {
+  previousTexts = {};
 }
 
 // Render all UI elements
@@ -67,7 +84,8 @@ export function renderUI(
   try {
     // Update title
     const titleText = 'TIMER';
-    const titleMetrics = getTextMetrics(titleText);
+    const previousTitle = previousTexts[CONTAINER_IDS.TITLE] || '';
+    const titleMetrics = getTextMetrics(titleText, previousTitle);
     bridge.textContainerUpgrade({
       containerID: CONTAINER_IDS.TITLE,
       containerName: CONTAINER_NAMES.TITLE,
@@ -75,10 +93,12 @@ export function renderUI(
       contentLength: titleMetrics.contentLength,
       contentOffset: titleMetrics.contentOffset,
     });
+    previousTexts[CONTAINER_IDS.TITLE] = titleText;
 
     // Update time display
     const timeText = formatTime(remainingSeconds);
-    const timeMetrics = getTextMetrics(timeText);
+    const previousTime = previousTexts[CONTAINER_IDS.TIME_DISPLAY] || '';
+    const timeMetrics = getTextMetrics(timeText, previousTime);
     bridge.textContainerUpgrade({
       containerID: CONTAINER_IDS.TIME_DISPLAY,
       containerName: CONTAINER_NAMES.TIME_DISPLAY,
@@ -86,10 +106,12 @@ export function renderUI(
       contentLength: timeMetrics.contentLength,
       contentOffset: timeMetrics.contentOffset,
     });
+    previousTexts[CONTAINER_IDS.TIME_DISPLAY] = timeText;
 
     // Update preset row
     const presetText = formatPresetRow(selectedPreset);
-    const presetMetrics = getTextMetrics(presetText);
+    const previousPreset = previousTexts[CONTAINER_IDS.PRESET_ROW] || '';
+    const presetMetrics = getTextMetrics(presetText, previousPreset);
     bridge.textContainerUpgrade({
       containerID: CONTAINER_IDS.PRESET_ROW,
       containerName: CONTAINER_NAMES.PRESET_ROW,
@@ -97,17 +119,21 @@ export function renderUI(
       contentLength: presetMetrics.contentLength,
       contentOffset: presetMetrics.contentOffset,
     });
+    previousTexts[CONTAINER_IDS.PRESET_ROW] = presetText;
 
     // Update status (hide text if blinking and not visible)
     const statusText = getStatusText(state);
-    const statusMetrics = getTextMetrics(isBlinkingVisible ? statusText : '');
+    const displayStatusText = isBlinkingVisible ? statusText : '';
+    const previousStatus = previousTexts[CONTAINER_IDS.STATUS] || '';
+    const statusMetrics = getTextMetrics(displayStatusText, previousStatus);
     bridge.textContainerUpgrade({
       containerID: CONTAINER_IDS.STATUS,
       containerName: CONTAINER_NAMES.STATUS,
-      content: isBlinkingVisible ? statusText : '',
+      content: displayStatusText,
       contentLength: statusMetrics.contentLength,
       contentOffset: statusMetrics.contentOffset,
     });
+    previousTexts[CONTAINER_IDS.STATUS] = displayStatusText;
   } catch (error) {
     console.error('Error rendering UI:', error);
   }
@@ -176,10 +202,22 @@ export async function createPageContainers(bridge: any): Promise<boolean> {
       textObject: textContainers,
     };
 
+    // Reset previous texts when creating new containers
+    resetPreviousTexts();
+    
     const result = await bridge.createStartUpPageContainer(container);
     console.log('CreateStartUpPageContainer result:', result);
-    // StartUpPageCreateResult.success can be 0 or 1 depending on SDK version
-    return result === StartUpPageCreateResult.success || result === 0 || result === 1 || result === 'success';
+    
+    // On real hardware, sometimes we need to wait a bit for containers to be ready
+    // The result might be successful but containers need time to initialize
+    const isSuccess = result === StartUpPageCreateResult.success || result === 0 || result === 1 || result === 'success';
+    
+    if (isSuccess) {
+      // Small delay to ensure containers are fully initialized on hardware
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    
+    return isSuccess;
   } catch (error) {
     console.error('Error creating page containers:', error);
     return false;

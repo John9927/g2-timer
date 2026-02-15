@@ -49,6 +49,10 @@ async function init() {
       return;
     }
 
+    // Wait a bit for containers to be fully initialized on hardware
+    // This is often needed on real devices but not in simulator
+    await new Promise(resolve => setTimeout(resolve, 100));
+
     // Initial render
     if (timerState) {
       renderUI(
