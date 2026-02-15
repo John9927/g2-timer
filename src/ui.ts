@@ -2,7 +2,14 @@ import {
   PRESETS,
   TimerState,
 } from './constants';
-import { StartUpPageCreateResult } from '@evenrealities/even_hub_sdk';
+import {
+  StartUpPageCreateResult,
+  CreateStartUpPageContainer,
+  TextContainerProperty,
+  ImageContainerProperty,
+  TextContainerUpgrade,
+  ImageRawDataUpdate,
+} from '@evenrealities/even_hub_sdk';
 
 /* ─── helpers ─────────────────────────────────────────────────────────── */
 
@@ -19,7 +26,9 @@ export function formatPresetRow(selectedPreset: number): string {
 export function getStatusText(state: TimerState): string { return state; }
 
 export function getTextMetrics(text: string) {
-  return { contentLength: text.length, contentOffset: 0 };
+  // Use UTF-8 byte length for hardware compatibility
+  const contentLength = new TextEncoder().encode(text).length;
+  return { contentLength, contentOffset: 0 };
 }
 
 export function createStatusIcon(_s: TimerState): Uint8Array | null { return null; }
@@ -300,13 +309,15 @@ async function renderTimerPngBytes(seconds: number, status?: string): Promise<nu
 
 function pushText(bridge: any, content: string) {
   const m = getTextMetrics(content);
-  bridge.textContainerUpgrade({
-    containerID: 1,
-    containerName: 'timer-main',
-    content,
-    contentLength: m.contentLength,
-    contentOffset: m.contentOffset,
-  });
+  bridge.textContainerUpgrade(
+    new TextContainerUpgrade({
+      containerID: 1,
+      containerName: 'timer-main',
+      content,
+      contentLength: m.contentLength,
+      contentOffset: m.contentOffset,
+    })
+  );
 }
 
 /**
@@ -329,11 +340,13 @@ async function pushImage(bridge: any, seconds: number, status?: string): Promise
     }
 
     console.log('[UI] Pushing timer image update, bytes:', pngBytes.length);
-    const result = await bridge.updateImageRawData({
-      containerID: 2,
-      containerName: 'timer-img',
-      imageData: pngBytes, // number[] for best hardware compatibility
-    });
+    const result = await bridge.updateImageRawData(
+      new ImageRawDataUpdate({
+        containerID: 2,
+        containerName: 'timer-img',
+        imageData: pngBytes, // number[] for best hardware compatibility
+      })
+    );
     console.log('[UI] ImageRawDataUpdateResult:', result);
   } catch (err: any) {
     console.error('[UI] Image update failed:', err);
@@ -356,7 +369,19 @@ export async function renderUI(
   if (!bridge) return;
 
   try {
-    if (debugMessage) { pushText(bridge, debugMessage); return; }
+    if (debugMessage) {
+      const debugBytes = new TextEncoder().encode(debugMessage).length;
+      bridge.textContainerUpgrade(
+        new TextContainerUpgrade({
+          containerID: 1,
+          containerName: 'timer-main',
+          content: debugMessage,
+          contentLength: debugBytes,
+          contentOffset: 0,
+        })
+      );
+      return;
+    }
 
     /* ── IDLE → show preset selection ── */
     if (state === TimerState.IDLE) {
@@ -413,54 +438,114 @@ export async function createPageContainers(
   try {
     const content = buildPresetContent(selectedPreset);
 
-    const textContainer: any = {
+    // Use SDK classes for hardware compatibility
+    const textContainer = new TextContainerProperty({
+      containerID: 1,
+      containerName: 'timer-main',
       xPosition: 0,
       yPosition: 0,
       width: 576,
       height: 288,
+      paddingLength: 20,
       borderWidth: 0,
       borderColor: 0,
-      paddingLength: 20,
-      containerID: 1,
-      containerName: 'timer-main',
       content,
       isEventCapture: 1,
-    };
+    });
 
-    // Image container – centered, will be empty/black initially (transparent on G2)
-    const imageContainer: any = {
+    const imageContainer = new ImageContainerProperty({
+      containerID: 2,
+      containerName: 'timer-img',
       xPosition: 188,   // (576 − 200) / 2
       yPosition: 40,
       width: 200,
       height: 100,
-      borderWidth: 0,
-      borderColor: 0,
-      containerID: 2,
-      containerName: 'timer-img',
-    };
-
-    console.log('[Boot] Creating text + image containers…');
-    const result = await bridge.createStartUpPageContainer({
-      containerTotalNum: 2,
-      textObject: [textContainer],
-      imageObject: [imageContainer],
     });
-    console.log('[Boot] Result:', result);
 
-    const ok =
-      result === StartUpPageCreateResult.success ||
-      result === 0 ||
-      result === 1 ||
-      result === 'success';
+    console.log('[Boot] Creating text + image containers with SDK classes…');
+    const result = await bridge.createStartUpPageContainer(
+      new CreateStartUpPageContainer({
+        containerTotalNum: 2,
+        textObject: [textContainer],
+        imageObject: [imageContainer],
+      })
+    );
+    console.log('[Boot] createStartUpPageContainer result:', result, 'type:', typeof result);
 
-    if (ok) {
-      console.log('[Boot] Containers created OK');
-      currentScreenType = 'preset';
-    } else {
-      console.error('[Boot] Container creation failed:', result);
+    // Check result more carefully
+    const isSuccess = result === StartUpPageCreateResult.success;
+    if (!isSuccess) {
+      console.error('[Boot] Container creation failed. Result:', result, 'Expected:', StartUpPageCreateResult.success);
+      return false;
     }
 
-    return ok;
+    console.log('[Boot] Containers created OK');
+    currentScreenType = 'preset';
+
+    // Test: Send simple text and white image to verify containers work
+    await new Promise(resolve => setTimeout(resolve, 500)); // Wait for hardware to settle
+
+    // Test 1: Simple text
+    const hello = 'HELLO G2';
+    const helloBytes = new TextEncoder().encode(hello).length;
+    console.log('[Boot] Test: Sending "HELLO G2" to text container…');
+    try {
+      await bridge.textContainerUpgrade(
+        new TextContainerUpgrade({
+          containerID: 1,
+          containerName: 'timer-main',
+          content: hello,
+          contentLength: helloBytes,
+          contentOffset: 0,
+        })
+      );
+      console.log('[Boot] Test text sent OK');
+    } catch (err: any) {
+      console.error('[Boot] Test text failed:', err);
+    }
+
+    // Test 2: White full image (200x100)
+    console.log('[Boot] Test: Sending white full image…');
+    try {
+      const testCanvas = document.createElement('canvas');
+      testCanvas.width = 200;
+      testCanvas.height = 100;
+      const testCtx = testCanvas.getContext('2d');
+      if (testCtx) {
+        testCtx.fillStyle = '#FFF';
+        testCtx.fillRect(0, 0, 200, 100);
+        const testBlob: Blob = await new Promise((resolve, reject) => {
+          testCanvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/png');
+        });
+        const testBuf = await testBlob.arrayBuffer();
+        const testBytes = Array.from(new Uint8Array(testBuf));
+        const testResult = await bridge.updateImageRawData(
+          new ImageRawDataUpdate({
+            containerID: 2,
+            containerName: 'timer-img',
+            imageData: testBytes,
+          })
+        );
+        console.log('[Boot] Test image sent, result:', testResult);
+      }
+    } catch (err: any) {
+      console.error('[Boot] Test image failed:', err);
+    }
+
+    // Restore preset content after tests
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    const contentBytes = new TextEncoder().encode(content).length;
+    await bridge.textContainerUpgrade(
+      new TextContainerUpgrade({
+        containerID: 1,
+        containerName: 'timer-main',
+        content,
+        contentLength: contentBytes,
+        contentOffset: 0,
+      })
+    );
+
+    return true;
   } catch (e) {
     console.error('createPageContainers error:', e);
     return false;
