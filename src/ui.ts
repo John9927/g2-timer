@@ -231,8 +231,8 @@ function drawPixelDigit(
 const DIGIT_WIDTH = 60;
 const DIGIT_HEIGHT = 84;
 const DIGIT_SCALE = 12;
-const COLON_WIDTH = 24; // Colon is narrower
-const COLON_HEIGHT = 84;
+const COLON_WIDTH = DIGIT_WIDTH; // Same width as digits (pattern is 5 columns)
+const COLON_HEIGHT = DIGIT_HEIGHT;
 const CONTAINER_SPACING = 10;
 
 /**
@@ -289,15 +289,21 @@ async function getDigitPngBytes(char: string): Promise<number[]> {
 
 /**
  * Pre-generate and cache all digits (0-9) and colon.
- * Call this once at startup.
+ * Call this AFTER creating containers to avoid blocking on hardware.
  */
-export async function pregenerateDigitCache(): Promise<void> {
-  console.log('[Digit] Pre-generating digit cache...');
-  const chars = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', ':'];
-  for (const char of chars) {
-    await getDigitPngBytes(char);
+async function pregenerateDigitCache(): Promise<void> {
+  console.log('[Digit] Pre-generating digit cache (lazy, on-demand)...');
+  // Generate only the most common digits first (0-5, colon)
+  // Others will be generated on-demand
+  const priorityChars = ['0', '1', '2', '3', '4', '5', ':'];
+  for (const char of priorityChars) {
+    try {
+      await getDigitPngBytes(char);
+    } catch (err) {
+      console.warn(`[Digit] Failed to pre-generate ${char}, will generate on-demand:`, err);
+    }
   }
-  console.log('[Digit] Digit cache ready, size:', digitCache.size);
+  console.log('[Digit] Priority cache ready, size:', digitCache.size);
 }
 
 /* ─── low-level SDK wrappers (zero console.log in hot path) ──────────── */
@@ -324,6 +330,10 @@ function pushText(bridge: any, content: string) {
  *  5 = S (seconds tens)
  *  6 = S (seconds ones)
  */
+/**
+ * Update individual digit containers. Only updates containers that changed.
+ * Updates are SEQUENTIAL (one at a time) for hardware compatibility.
+ */
 async function updateDigitContainers(bridge: any, seconds: number): Promise<void> {
   if (imageUpdateInProgress) {
     return; // Skip if another update is in progress
@@ -338,93 +348,102 @@ async function updateDigitContainers(bridge: any, seconds: number): Promise<void
   }
 
   imageUpdateInProgress = true;
-  const updates: Promise<void>[] = [];
 
   try {
-    // Update only changed digits
+    // Update only changed digits - SEQUENTIALLY (one at a time)
+    // Hardware BLE often fails with parallel updates
+
+    // Colon is set once (containerID 4)
+    if (lastDisplayedDigits === '') {
+      const bytes = await getDigitPngBytes(':');
+      if (bytes.length > 0) {
+        try {
+          const result = await bridge.updateImageRawData(
+            new ImageRawDataUpdate({
+              containerID: 4,
+              containerName: 'timer-colon',
+              imageData: bytes,
+            })
+          );
+          console.log('[UI] Colon set, result:', result);
+        } catch (err: any) {
+          console.error('[UI] Colon update failed:', err);
+        }
+      }
+    }
+
     if (lastDisplayedDigits[0] !== mTens) {
       const bytes = await getDigitPngBytes(mTens);
       if (bytes.length > 0) {
-        updates.push(
-          bridge.updateImageRawData(
+        try {
+          const result = await bridge.updateImageRawData(
             new ImageRawDataUpdate({
               containerID: 2,
               containerName: 'timer-m-tens',
               imageData: bytes,
             })
-          ).then((result: any) => console.log('[UI] M tens updated, result:', result))
-          .catch((err: any) => console.error('[UI] M tens update failed:', err))
-        );
+          );
+          console.log('[UI] M tens updated, result:', result);
+        } catch (err: any) {
+          console.error('[UI] M tens update failed:', err);
+        }
       }
     }
 
     if (lastDisplayedDigits[1] !== mOnes) {
       const bytes = await getDigitPngBytes(mOnes);
       if (bytes.length > 0) {
-        updates.push(
-          bridge.updateImageRawData(
+        try {
+          const result = await bridge.updateImageRawData(
             new ImageRawDataUpdate({
               containerID: 3,
               containerName: 'timer-m-ones',
               imageData: bytes,
             })
-          ).then((result: any) => console.log('[UI] M ones updated, result:', result))
-          .catch((err: any) => console.error('[UI] M ones update failed:', err))
-        );
-      }
-    }
-
-    // Colon is set once (containerID 4)
-    if (lastDisplayedDigits === '') {
-      const bytes = await getDigitPngBytes(':');
-      if (bytes.length > 0) {
-        updates.push(
-          bridge.updateImageRawData(
-            new ImageRawDataUpdate({
-              containerID: 4,
-              containerName: 'timer-colon',
-              imageData: bytes,
-            })
-          ).then((result: any) => console.log('[UI] Colon set, result:', result))
-          .catch((err: any) => console.error('[UI] Colon update failed:', err))
-        );
+          );
+          console.log('[UI] M ones updated, result:', result);
+        } catch (err: any) {
+          console.error('[UI] M ones update failed:', err);
+        }
       }
     }
 
     if (lastDisplayedDigits[3] !== sTens) {
       const bytes = await getDigitPngBytes(sTens);
       if (bytes.length > 0) {
-        updates.push(
-          bridge.updateImageRawData(
+        try {
+          const result = await bridge.updateImageRawData(
             new ImageRawDataUpdate({
               containerID: 5,
               containerName: 'timer-s-tens',
               imageData: bytes,
             })
-          ).then((result: any) => console.log('[UI] S tens updated, result:', result))
-          .catch((err: any) => console.error('[UI] S tens update failed:', err))
-        );
+          );
+          console.log('[UI] S tens updated, result:', result);
+        } catch (err: any) {
+          console.error('[UI] S tens update failed:', err);
+        }
       }
     }
 
     if (lastDisplayedDigits[4] !== sOnes) {
       const bytes = await getDigitPngBytes(sOnes);
       if (bytes.length > 0) {
-        updates.push(
-          bridge.updateImageRawData(
+        try {
+          const result = await bridge.updateImageRawData(
             new ImageRawDataUpdate({
               containerID: 6,
               containerName: 'timer-s-ones',
               imageData: bytes,
             })
-          ).then((result: any) => console.log('[UI] S ones updated, result:', result))
-          .catch((err: any) => console.error('[UI] S ones update failed:', err))
-        );
+          );
+          console.log('[UI] S ones updated, result:', result);
+        } catch (err: any) {
+          console.error('[UI] S ones update failed:', err);
+        }
       }
     }
 
-    // Wait for all updates (they can run in parallel since SDK handles queue)
-    await Promise.all(updates);
     lastDisplayedDigits = time;
   } catch (err: any) {
     console.error('[UI] Digit container update failed:', err);
@@ -516,9 +535,6 @@ export async function createPageContainers(
   try {
     const content = buildPresetContent(selectedPreset);
 
-    // Pre-generate digit cache before creating containers
-    await pregenerateDigitCache();
-
     // Text container (full screen for preset, status strip for timer)
     const textContainer = new TextContainerProperty({
       containerID: 1,
@@ -606,10 +622,10 @@ export async function createPageContainers(
     console.log('[Boot] Containers created OK');
     currentScreenType = 'preset';
 
-    // Test: Send simple text and white image to verify containers work
-    await new Promise(resolve => setTimeout(resolve, 500)); // Wait for hardware to settle
+    // Wait for hardware to settle before doing any image operations
+    await new Promise(resolve => setTimeout(resolve, 600));
 
-    // Test 1: Simple text
+    // Test 1: Simple text (verify text container works)
     const hello = 'HELLO G2';
     const helloBytes = new TextEncoder().encode(hello).length;
     console.log('[Boot] Test: Sending "HELLO G2" to text container…');
@@ -628,7 +644,12 @@ export async function createPageContainers(
       console.error('[Boot] Test text failed:', err);
     }
 
-    // Test 2: Send digit "0" to first container to verify it works
+    // NOW pre-generate digit cache (AFTER containers are created)
+    // This avoids blocking on hardware where toBlob() can be slow/unstable
+    console.log('[Boot] Pre-generating digit cache (after container creation)…');
+    await pregenerateDigitCache();
+
+    // Test 2: Send digit "0" to first container to verify image containers work
     console.log('[Boot] Test: Sending digit "0" to first container…');
     try {
       const testBytes = await getDigitPngBytes('0');
