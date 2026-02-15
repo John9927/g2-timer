@@ -535,7 +535,8 @@ export async function createPageContainers(
   try {
     const content = buildPresetContent(selectedPreset);
 
-    // Text container (full screen for preset, status strip for timer)
+    // STEP 1: Create ONLY text container first (simplest test)
+    console.log('[Boot] STEP 1: Creating ONLY text container…');
     const textContainer = new TextContainerProperty({
       containerID: 1,
       containerName: 'timer-main',
@@ -546,129 +547,52 @@ export async function createPageContainers(
       paddingLength: 20,
       borderWidth: 0,
       borderColor: 0,
-      content,
+      content: 'TEST TEXT\n\nSe vedi questo, il text container funziona!',
       isEventCapture: 1,
     });
 
-    // Calculate positions to center the 5 digit containers
-    // Layout: [M tens] [spacing] [M ones] [spacing] [:] [spacing] [S tens] [spacing] [S ones]
-    const totalWidth = 2 * DIGIT_WIDTH + COLON_WIDTH + 4 * CONTAINER_SPACING;
-    const startX = Math.floor((576 - totalWidth) / 2);
-    const startY = Math.floor((288 - DIGIT_HEIGHT) / 2) - 20; // Slightly above center
-
-    // 5 digit containers
-    const mTensContainer = new ImageContainerProperty({
-      containerID: 2,
-      containerName: 'timer-m-tens',
-      xPosition: startX,
-      yPosition: startY,
-      width: DIGIT_WIDTH,
-      height: DIGIT_HEIGHT,
-    });
-
-    const mOnesContainer = new ImageContainerProperty({
-      containerID: 3,
-      containerName: 'timer-m-ones',
-      xPosition: startX + DIGIT_WIDTH + CONTAINER_SPACING,
-      yPosition: startY,
-      width: DIGIT_WIDTH,
-      height: DIGIT_HEIGHT,
-    });
-
-    const colonContainer = new ImageContainerProperty({
-      containerID: 4,
-      containerName: 'timer-colon',
-      xPosition: startX + 2 * DIGIT_WIDTH + 2 * CONTAINER_SPACING,
-      yPosition: startY,
-      width: COLON_WIDTH,
-      height: COLON_HEIGHT,
-    });
-
-    const sTensContainer = new ImageContainerProperty({
-      containerID: 5,
-      containerName: 'timer-s-tens',
-      xPosition: startX + 2 * DIGIT_WIDTH + COLON_WIDTH + 3 * CONTAINER_SPACING,
-      yPosition: startY,
-      width: DIGIT_WIDTH,
-      height: DIGIT_HEIGHT,
-    });
-
-    const sOnesContainer = new ImageContainerProperty({
-      containerID: 6,
-      containerName: 'timer-s-ones',
-      xPosition: startX + 3 * DIGIT_WIDTH + COLON_WIDTH + 4 * CONTAINER_SPACING,
-      yPosition: startY,
-      width: DIGIT_WIDTH,
-      height: DIGIT_HEIGHT,
-    });
-
-    console.log('[Boot] Creating 5 digit containers + text container with SDK classes…');
     const result = await bridge.createStartUpPageContainer(
       new CreateStartUpPageContainer({
-        containerTotalNum: 6,
+        containerTotalNum: 1,
         textObject: [textContainer],
-        imageObject: [mTensContainer, mOnesContainer, colonContainer, sTensContainer, sOnesContainer],
       })
     );
     console.log('[Boot] createStartUpPageContainer result:', result, 'type:', typeof result);
 
-    // Check result more carefully
+    // Check result
     const isSuccess = result === StartUpPageCreateResult.success;
     if (!isSuccess) {
       console.error('[Boot] Container creation failed. Result:', result, 'Expected:', StartUpPageCreateResult.success);
       return false;
     }
 
-    console.log('[Boot] Containers created OK');
+    console.log('[Boot] Text container created OK');
     currentScreenType = 'preset';
 
-    // Wait for hardware to settle before doing any image operations
-    await new Promise(resolve => setTimeout(resolve, 600));
+    // Wait for hardware to settle
+    await new Promise(resolve => setTimeout(resolve, 800));
 
-    // Test 1: Simple text (verify text container works)
-    const hello = 'HELLO G2';
-    const helloBytes = new TextEncoder().encode(hello).length;
-    console.log('[Boot] Test: Sending "HELLO G2" to text container…');
+    // Test: Update text to verify it works
+    const testText = 'HELLO G2 - Se vedi questo funziona!';
+    const testBytes = new TextEncoder().encode(testText).length;
+    console.log('[Boot] Test: Updating text container…');
     try {
-      await bridge.textContainerUpgrade(
+      const updateResult = await bridge.textContainerUpgrade(
         new TextContainerUpgrade({
           containerID: 1,
           containerName: 'timer-main',
-          content: hello,
-          contentLength: helloBytes,
+          content: testText,
+          contentLength: testBytes,
           contentOffset: 0,
         })
       );
-      console.log('[Boot] Test text sent OK');
+      console.log('[Boot] Text update result:', updateResult);
     } catch (err: any) {
-      console.error('[Boot] Test text failed:', err);
+      console.error('[Boot] Text update failed:', err);
     }
 
-    // NOW pre-generate digit cache (AFTER containers are created)
-    // This avoids blocking on hardware where toBlob() can be slow/unstable
-    console.log('[Boot] Pre-generating digit cache (after container creation)…');
-    await pregenerateDigitCache();
-
-    // Test 2: Send digit "0" to first container to verify image containers work
-    console.log('[Boot] Test: Sending digit "0" to first container…');
-    try {
-      const testBytes = await getDigitPngBytes('0');
-      if (testBytes.length > 0) {
-        const testResult = await bridge.updateImageRawData(
-          new ImageRawDataUpdate({
-            containerID: 2,
-            containerName: 'timer-m-tens',
-            imageData: testBytes,
-          })
-        );
-        console.log('[Boot] Test digit sent, result:', testResult);
-      }
-    } catch (err: any) {
-      console.error('[Boot] Test digit failed:', err);
-    }
-
-    // Restore preset content after tests
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    // Restore preset content
+    await new Promise(resolve => setTimeout(resolve, 2000));
     const contentBytes = new TextEncoder().encode(content).length;
     await bridge.textContainerUpgrade(
       new TextContainerUpgrade({
