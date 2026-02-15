@@ -53,34 +53,6 @@
         flex-direction: column;
         gap: 20px;
       }
-      /* Display as on glasses */
-      #remote-display {
-        text-align: center;
-        padding: 24px 16px;
-        background: var(--bg);
-        border-radius: 12px;
-        border: 1px solid var(--border);
-      }
-      #remote-time {
-        font-size: 3rem;
-        font-weight: 700;
-        letter-spacing: 0.05em;
-        line-height: 1;
-        font-variant-numeric: tabular-nums;
-        color: var(--text);
-        margin: 0;
-        min-height: 1.1em;
-      }
-      #remote-state {
-        font-size: 0.9rem;
-        color: var(--muted);
-        margin-top: 8px;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-      }
-      #remote-state.running { color: var(--go); }
-      #remote-state.paused { color: var(--pause); }
-      #remote-state.done { color: var(--danger); }
       /* Preset */
       #remote-preset-section {
         display: flex;
@@ -188,10 +160,6 @@
   <body>
     <h1>G2 Timer – Remote control</h1>
     <div id="remote-container">
-      <div id="remote-display">
-        <p id="remote-time">--:--</p>
-        <p id="remote-state" class="idle">Status</p>
-      </div>
       <div id="remote-preset-section">
         <label>Duration (minutes)</label>
         <div id="remote-preset-buttons">

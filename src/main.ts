@@ -42,8 +42,6 @@ function getStateLabel(state: TimerState): string {
 }
 
 function updateRemoteView() {
-  const remoteTime = document.getElementById('remote-time');
-  const remoteState = document.getElementById('remote-state');
   const remoteStatus = document.getElementById('remote-status');
   const btnStartPause = document.getElementById('btn-start-pause') as HTMLButtonElement | null;
   const btnReset = document.getElementById('btn-reset') as HTMLButtonElement | null;
@@ -60,21 +58,6 @@ function updateRemoteView() {
   const isPendingStart = remoteStartScheduledAt !== null;
 
   if (timerState) {
-    const mins = Math.floor(timerState.getRemainingSeconds() / 60);
-    const secs = timerState.getRemainingSeconds() % 60;
-    const timeStr = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-    if (remoteTime) remoteTime.textContent = timeStr;
-    if (remoteState) {
-      if (isPendingStart) {
-        const remaining = Math.ceil((REMOTE_START_DELAY_MS - (Date.now() - remoteStartScheduledAt!)) / 1000);
-        remoteState.textContent = remaining > 0 ? `Starting in ${remaining}…` : 'Starting…';
-        remoteState.className = 'running';
-      } else {
-        remoteState.textContent = getStateLabel(timerState.getState());
-        remoteState.className = timerState.getState().toLowerCase();
-      }
-    }
-
     const preset = timerState.getSelectedPreset();
     presetButtons.forEach((btn) => {
       const p = parseInt((btn as HTMLElement).dataset.preset || '', 10);
@@ -95,11 +78,6 @@ function updateRemoteView() {
     }
     if (btnReset) btnReset.disabled = !connected;
   } else {
-    if (remoteTime) remoteTime.textContent = '--:--';
-    if (remoteState) {
-      remoteState.textContent = 'Status';
-      remoteState.className = 'idle';
-    }
     presetButtons.forEach((btn) => {
       btn.classList.remove('selected');
       (btn as HTMLButtonElement).disabled = true;
