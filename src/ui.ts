@@ -58,65 +58,174 @@ export function resetPreviousTexts(): void {
   // No-op: we always use contentOffset: 0 now
 }
 
-// Render all UI elements
-// SIMPLIFIED: Update single container like working project
-export function renderUI(
+// Render preset selection screen (IDLE state)
+async function renderPresetSelection(
+  bridge: any,
+  selectedPreset: number
+): Promise<void> {
+  if (!bridge) return;
+
+  try {
+    // Create beautiful preset selection screen
+    const presetLines = PRESETS.map((preset) => {
+      if (preset === selectedPreset) {
+        // Selected preset: highlighted with brackets and spacing
+        return `  > ${preset} min  <`;
+      }
+      return `    ${preset} min`;
+    }).join('\n');
+
+    const content = `Scegli i minuti\n\n${presetLines}\n\nSwipe per cambiare\nTocca per avviare`;
+
+    const textContainer: any = {
+      xPosition: 0,
+      yPosition: 0,
+      width: 576,
+      height: 288,
+      borderWidth: 0,
+      borderColor: 0,
+      paddingLength: 20,
+      containerID: 1,
+      containerName: "preset-selection",
+      content: content,
+      isEventCapture: 1,
+    };
+
+    const container: any = {
+      containerTotalNum: 1,
+      textObject: [textContainer],
+    };
+
+    await bridge.rebuildPageContainer(container);
+  } catch (error) {
+    console.error('Error rendering preset selection:', error);
+  }
+}
+
+// Render timer screen (RUNNING/PAUSED/DONE state)
+async function renderTimerScreen(
+  bridge: any,
+  state: TimerState,
+  remainingSeconds: number,
+  isBlinkingVisible: boolean = true
+): Promise<void> {
+  if (!bridge) return;
+
+  try {
+    const timeText = formatTime(remainingSeconds);
+    
+    // Large timer display - center the time
+    // Add extra spacing to make it really big and centered
+    const paddingTop = '\n\n\n\n\n\n';
+    const paddingBottom = '\n\n\n\n\n\n';
+    
+    let content = `${paddingTop}${timeText}${paddingBottom}`;
+    
+    // Add status if paused (but not if blinking/done)
+    if (state === TimerState.PAUSED) {
+      content = `${paddingTop}${timeText}\n\nPAUSED${paddingBottom}`;
+    } else if (state === TimerState.DONE && isBlinkingVisible) {
+      content = `${paddingTop}${timeText}\n\nCOMPLETATO${paddingBottom}`;
+    }
+
+    const textContainer: any = {
+      xPosition: 0,
+      yPosition: 0,
+      width: 576,
+      height: 288,
+      borderWidth: 0,
+      borderColor: 0,
+      paddingLength: 20,
+      containerID: 1,
+      containerName: "timer-display",
+      content: content,
+      isEventCapture: 1,
+    };
+
+    const container: any = {
+      containerTotalNum: 1,
+      textObject: [textContainer],
+    };
+
+    await bridge.rebuildPageContainer(container);
+  } catch (error) {
+    console.error('Error rendering timer screen:', error);
+  }
+}
+
+// Render all UI elements - switches between preset selection and timer screen
+export async function renderUI(
   bridge: any,
   state: TimerState,
   selectedPreset: number,
   remainingSeconds: number,
   isBlinkingVisible: boolean = true,
   debugMessage?: string
-): void {
+): Promise<void> {
   if (!bridge) return;
 
   try {
-    // Build content for single container
-    const timeText = formatTime(remainingSeconds);
-    const presetText = formatPresetRow(selectedPreset);
-    const statusText = getStatusText(state);
-    const displayStatusText = isBlinkingVisible ? statusText : '';
-    
-    let content = `TIMER\n\n${timeText}\n\n${presetText}\n\n${displayStatusText}`;
-    
-    // If debug message, show it instead
+    // If debug message, show it
     if (debugMessage) {
-      content = debugMessage;
+      const textContainer: any = {
+        xPosition: 0,
+        yPosition: 0,
+        width: 576,
+        height: 288,
+        borderWidth: 0,
+        borderColor: 0,
+        paddingLength: 20,
+        containerID: 1,
+        containerName: "debug",
+        content: debugMessage,
+        isEventCapture: 1,
+      };
+      const container: any = {
+        containerTotalNum: 1,
+        textObject: [textContainer],
+      };
+      await bridge.rebuildPageContainer(container);
+      return;
     }
-    
-    const metrics = getTextMetrics(content);
-    
-    // Update single container (ID: 1, like working project)
-    bridge.textContainerUpgrade({
-      containerID: 1,
-      containerName: "timer-main",
-      content: content,
-      contentLength: metrics.contentLength,
-      contentOffset: metrics.contentOffset,
-    });
+
+    // Show preset selection when IDLE
+    if (state === TimerState.IDLE) {
+      await renderPresetSelection(bridge, selectedPreset);
+    } else {
+      // Show timer screen when RUNNING, PAUSED, or DONE
+      await renderTimerScreen(bridge, state, remainingSeconds, isBlinkingVisible);
+    }
   } catch (error) {
     console.error('Error rendering UI:', error);
   }
 }
 
-// Create initial page containers
-export async function createPageContainers(bridge: any): Promise<boolean> {
+// Create initial page containers - shows preset selection screen
+export async function createPageContainers(bridge: any, selectedPreset: number = 5): Promise<boolean> {
   if (!bridge) return false;
 
   try {
-    // SIMPLIFIED: Create a SINGLE large container like the working project
-    // This is a test to see if at least ONE container appears on glasses
+    // Create preset selection screen as initial view
+    const presetLines = PRESETS.map((preset) => {
+      if (preset === selectedPreset) {
+        return `  > ${preset} min  <`;
+      }
+      return `    ${preset} min`;
+    }).join('\n');
+
+    const content = `Scegli i minuti\n\n${presetLines}\n\nSwipe per cambiare\nTocca per avviare`;
+
     const textContainer: any = {
-      xPosition: 20,
-      yPosition: 20,
-      width: 536, // 576 - 40 (margins)
-      height: 248, // 288 - 40 (margins)
-      borderWidth: 1,
-      borderColor: 15, // white border to make it visible
-      paddingLength: 10,
+      xPosition: 0,
+      yPosition: 0,
+      width: 576,
+      height: 288,
+      borderWidth: 0,
+      borderColor: 0,
+      paddingLength: 20,
       containerID: 1,
-      containerName: "timer-main",
-      content: "TIMER\n\n05:00\n\n1 3 5 10 15 30 60\n\nIDLE",
+      containerName: "preset-selection",
+      content: content,
       isEventCapture: 1,
     };
 
@@ -133,7 +242,7 @@ export async function createPageContainers(bridge: any): Promise<boolean> {
       container: {
         id: textContainer.containerID,
         name: textContainer.containerName,
-        content: textContainer.content,
+        content: textContainer.content.substring(0, 50) + '...',
         pos: `(${textContainer.xPosition}, ${textContainer.yPosition})`,
         size: `${textContainer.width}x${textContainer.height}`
       }
