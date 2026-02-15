@@ -211,32 +211,34 @@ export function resetPreviousTexts(): void {
 }
 
 function buildPresetContent(selectedPreset: number): string {
-  const selectedIndex = PRESETS.indexOf(selectedPreset as (typeof PRESETS)[number]);
-  const safeIndex = selectedIndex >= 0 ? selectedIndex : 0;
-  const previous = PRESETS[(safeIndex - 1 + PRESETS.length) % PRESETS.length];
-  const current = PRESETS[safeIndex];
-  const next = PRESETS[(safeIndex + 1) % PRESETS.length];
+  const minutes = String(Math.min(99, Math.max(0, selectedPreset))).padStart(2, '0');
+  const leftPattern = DIGIT_PATTERNS[minutes[0]];
+  const rightPattern = DIGIT_PATTERNS[minutes[1]];
+  const artLines: string[] = [];
 
-  const fmt = (value: number) => String(value).padStart(2, '0');
-  const innerWidth = 28;
-  const border = `+${'-'.repeat(innerWidth)}+`;
-  const center = (text: string) => {
-    const clipped = text.length > innerWidth ? text.slice(0, innerWidth) : text;
-    const leftPad = Math.floor((innerWidth - clipped.length) / 2);
-    const rightPad = innerWidth - clipped.length - leftPad;
-    return `|${' '.repeat(leftPad)}${clipped}${' '.repeat(rightPad)}|`;
-  };
+  if (leftPattern && rightPattern) {
+    for (let row = 0; row < leftPattern.length; row++) {
+      const left = leftPattern[row].map((pixel) => (pixel ? '##' : '  ')).join('');
+      const right = rightPattern[row].map((pixel) => (pixel ? '##' : '  ')).join('');
+      artLines.push(`${left}    ${right}`);
+    }
+  }
+
+  const presetLine = PRESETS.map((preset) => (preset === selectedPreset ? `[${preset}]` : `${preset}`)).join('  ');
 
   return [
-    border,
-    center('SELEZIONA MINUTI'),
-    center(''),
-    center(`[ ${fmt(current)} MIN ]`),
-    center(`< ${fmt(previous)}      ${fmt(next)} >`),
-    center(''),
-    center('SWIPE = CAMBIA'),
-    center('TAP = AVVIA'),
-    border,
+    'TIMER G2',
+    '',
+    'Scegli i minuti',
+    '',
+    ...artLines,
+    '',
+    `Preset: ${minutes} min`,
+    '',
+    presetLine,
+    '',
+    'Scorri per cambiare',
+    'Tocca per avviare',
   ].join('\n');
 }
 
