@@ -218,6 +218,10 @@ function setupBrowserClickHandlers() {
   });
 }
 
+// Swipe throttling to prevent rapid duplicate events
+let lastSwipeTime = 0;
+const SWIPE_COOLDOWN_MS = 300; // 300ms cooldown between swipes
+
 // Set up event handlers for taps and system events
 function setupEventHandlers() {
   if (!bridge) return;
@@ -227,6 +231,27 @@ function setupEventHandlers() {
       if (!timerState || !isInForeground) return;
 
       console.log('Even Hub event:', event);
+      
+      // Handle text container events (swipes come as SCROLL_TOP/SCROLL_BOTTOM events)
+      // According to docs: SCROLL_TOP_EVENT (1) = swipe forward, SCROLL_BOTTOM_EVENT (2) = swipe back
+      if (event.textEvent) {
+        const textEvent = event.textEvent;
+        const eventType = textEvent.eventType;
+        
+        console.log('Text event detected:', { eventType, textEvent });
+        
+        // SCROLL_TOP_EVENT = 1 (swipe forward/up) = next preset
+        // SCROLL_BOTTOM_EVENT = 2 (swipe back/down) = previous preset
+        if (eventType === 1) {
+          // Swipe forward/up: next preset
+          console.log('SCROLL_TOP detected - swipe forward');
+          handleSwipeRight();
+        } else if (eventType === 2) {
+          // Swipe back/down: previous preset
+          console.log('SCROLL_BOTTOM detected - swipe back');
+          handleSwipeLeft();
+        }
+      }
 
       // Handle system events (foreground/background)
       if (event.type === 'sysEvent') {
@@ -251,41 +276,29 @@ function setupEventHandlers() {
         return;
       }
 
-      // Handle tap events
-      if (event.type === 'tap' || event.eventType === 'tap') {
+      // Handle tap events (CLICK_EVENT = 0, but SDK normalizes 0 to undefined)
+      // Check both textEvent and direct eventType
+      if (event.textEvent) {
+        const textEvent = event.textEvent;
+        const eventType = textEvent.eventType;
+        
+        // CLICK_EVENT = 0, but SDK may normalize to undefined
+        if (eventType === 0 || eventType === undefined) {
+          const containerID = textEvent.containerID;
+          console.log('Click event detected:', { containerID, textEvent });
+          handleContainerTap(containerID, 1);
+        }
+      } else if (event.type === 'tap' || event.eventType === 'tap' || event.eventType === 0 || event.eventType === undefined) {
         const containerID = event.containerID || event.containerId;
-
-        // Check for multi-tap support
         const tapCount = event.tapCount || event.taps || 1;
 
         if (containerID) {
-          // Container-based taps
           handleContainerTap(containerID, tapCount);
         } else {
-          // Global tap (if supported)
           handleGlobalTap(tapCount);
         }
       }
 
-      // Handle swipe events
-      // Check multiple possible event formats for swipe
-      if (event.type === 'swipe' || 
-          event.eventType === 'swipe' || 
-          event.swipeEvent ||
-          (event.type === 'gesture' && (event.direction === 'left' || event.direction === 'right'))) {
-        const swipeEvent = event.swipeEvent || event;
-        const direction = swipeEvent.direction || swipeEvent.swipeDirection || swipeEvent.gestureDirection;
-        
-        console.log('Swipe event detected:', { direction, event });
-        
-        if (direction === 'right' || direction === 'Right' || direction === 1 || direction === 'RightSwipe') {
-          // Swipe right: next preset
-          handleSwipeRight();
-        } else if (direction === 'left' || direction === 'Left' || direction === -1 || direction === 'LeftSwipe') {
-          // Swipe left: previous preset
-          handleSwipeLeft();
-        }
-      }
     });
   } catch (error) {
     console.error('Error setting up event handlers:', error);
@@ -330,37 +343,53 @@ function handleGlobalTap(tapCount: number) {
   }
 }
 
-// Handle swipe right: next preset
+// Handle swipe right: next preset (SCROLL_TOP_EVENT = 1)
 function handleSwipeRight() {
-  if (!timerState) return;
+  if (!timerState || !bridge) return;
+  
+  // Throttle swipes to prevent rapid duplicate events
+  const now = Date.now();
+  if (now - lastSwipeTime < SWIPE_COOLDOWN_MS) {
+    console.log('Swipe throttled');
+    return;
+  }
+  lastSwipeTime = now;
+  
   timerState.cyclePreset();
   debugLogToDisplay('Swipe right: next preset');
-  if (bridge) {
-    renderUI(
-      bridge,
-      timerState.getState(),
-      timerState.getSelectedPreset(),
-      timerState.getRemainingSeconds(),
-      timerState.getBlinkVisibility()
-    );
-  }
+  
+  renderUI(
+    bridge,
+    timerState.getState(),
+    timerState.getSelectedPreset(),
+    timerState.getRemainingSeconds(),
+    timerState.getBlinkVisibility()
+  );
   updateDebugView();
 }
 
-// Handle swipe left: previous preset
+// Handle swipe left: previous preset (SCROLL_BOTTOM_EVENT = 2)
 function handleSwipeLeft() {
-  if (!timerState) return;
+  if (!timerState || !bridge) return;
+  
+  // Throttle swipes to prevent rapid duplicate events
+  const now = Date.now();
+  if (now - lastSwipeTime < SWIPE_COOLDOWN_MS) {
+    console.log('Swipe throttled');
+    return;
+  }
+  lastSwipeTime = now;
+  
   timerState.cyclePresetBackward();
   debugLogToDisplay('Swipe left: previous preset');
-  if (bridge) {
-    renderUI(
-      bridge,
-      timerState.getState(),
-      timerState.getSelectedPreset(),
-      timerState.getRemainingSeconds(),
-      timerState.getBlinkVisibility()
-    );
-  }
+  
+  renderUI(
+    bridge,
+    timerState.getState(),
+    timerState.getSelectedPreset(),
+    timerState.getRemainingSeconds(),
+    timerState.getBlinkVisibility()
+  );
   updateDebugView();
 }
 
