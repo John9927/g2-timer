@@ -272,7 +272,16 @@ export async function createPageContainers(bridge: any, selectedPreset: number =
   if (!bridge) return false;
 
   try {
-    // Create simple container - we'll update content immediately after
+    // Create preset selection screen directly as initial view
+    const presetLines = PRESETS.map((preset) => {
+      if (preset === selectedPreset) {
+        return `  > ${preset} min  <`;
+      }
+      return `    ${preset} min`;
+    }).join('\n');
+
+    const content = `Scegli i minuti\n\n${presetLines}\n\nSwipe per cambiare\nTocca per avviare`;
+
     const textContainer: any = {
       xPosition: 0,
       yPosition: 0,
@@ -282,8 +291,8 @@ export async function createPageContainers(bridge: any, selectedPreset: number =
       borderColor: 0,
       paddingLength: 20,
       containerID: 1,
-      containerName: "timer-main",
-      content: "Inizializzazione...",
+      containerName: "preset-selection",
+      content: content,
       isEventCapture: 1,
     };
 
@@ -304,6 +313,8 @@ export async function createPageContainers(bridge: any, selectedPreset: number =
     
     if (isSuccess) {
       console.log('[Display] ✅ Contenitore display creato con successo');
+      // Set current screen type
+      currentScreenType = 'preset';
     } else {
       console.error('[Display] ❌ Errore creazione contenitore:', result);
     }

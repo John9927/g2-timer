@@ -133,20 +133,24 @@ async function init() {
     }
     debugLogToDisplay('Container creati OK');
 
-    // Initial render - show preset selection
-    // Add small delay to ensure container is ready
-    setTimeout(async () => {
-      if (timerState && bridge) {
-        debugLogToDisplay('Primo render...');
-        await renderUI(
-          bridge,
-          timerState.getState(),
-          timerState.getSelectedPreset(),
-          timerState.getRemainingSeconds(),
-          timerState.getBlinkVisibility()
-        );
-      }
-    }, 200);
+    // Initial render - container already has preset selection content
+    // Just ensure it's displayed correctly
+    if (timerState && bridge) {
+      debugLogToDisplay('Container creato, verificando display...');
+      // Small delay to ensure container is ready, then verify/update if needed
+      setTimeout(async () => {
+        if (timerState && bridge) {
+          // Update to ensure it's displayed (sometimes helps on real hardware)
+          await renderUI(
+            bridge,
+            timerState.getState(),
+            timerState.getSelectedPreset(),
+            timerState.getRemainingSeconds(),
+            timerState.getBlinkVisibility()
+          );
+        }
+      }, 100);
+    }
 
     // Set up event handlers
     setupEventHandlers();
