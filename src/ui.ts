@@ -212,23 +212,25 @@ function drawPixelDigit(
   }
 }
 
-/* ─── canvas → base64 PNG (pixel-based rendering) ─────────────────── */
-
-function renderTimerImage(seconds: number, status?: string): string {
-  const c = getCtx();
-  if (!c || !_canvas) {
+/**
+ * Render timer as PNG bytes (number[]) using toBlob() for hardware compatibility.
+ * Returns empty array on error.
+ */
+async function renderTimerPngBytes(seconds: number, status?: string): Promise<number[]> {
+  const ctx = getCtx();
+  if (!ctx || !_canvas) {
     console.error('[Canvas] Context or canvas not available');
-    return '';
+    return [];
   }
   const W = _canvas.width, H = _canvas.height;
   console.log('[Canvas] Rendering timer image:', { seconds, status, W, H });
 
   // Black background (transparent on G2)
-  c.fillStyle = '#000';
-  c.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, W, H);
 
   // White pixels (visible on G2)
-  c.fillStyle = '#FFF';
+  ctx.fillStyle = '#FFF';
 
   const time = formatTime(seconds); // "MM:SS"
   console.log('[Canvas] Time string:', time);
@@ -245,8 +247,8 @@ function renderTimerImage(seconds: number, status?: string): string {
 
   // Calculate total width: MM:SS = 2 digits + colon + 2 digits = 4 digits + 1 colon
   const totalWidth = 4 * digitWidth + colonWidth + 3 * spacing; // ~174 pixels
-  const startX = Math.max(0, (W - totalWidth) / 2); // Ensure not negative
-  const startY = Math.max(0, (H - digitHeight) / 2); // Ensure not negative
+  const startX = Math.floor((W - totalWidth) / 2);
+  const startY = Math.floor((H - digitHeight) / 2);
 
   console.log('[Canvas] Layout:', { 
     totalWidth, 
@@ -261,43 +263,36 @@ function renderTimerImage(seconds: number, status?: string): string {
 
   // Draw each character
   let currentX = startX;
-  for (let i = 0; i < time.length; i++) {
-    const char = time[i];
-    console.log('[Canvas] Drawing char:', char, 'at x:', currentX);
-    if (char === ':') {
-      drawPixelDigit(c, ':', currentX, startY, pixelSize);
+  for (const ch of time) {
+    if (ch === ':') {
+      drawPixelDigit(ctx, ':', currentX, startY, pixelSize);
       currentX += colonWidth + spacing;
     } else {
-      drawPixelDigit(c, char, currentX, startY, pixelSize);
+      drawPixelDigit(ctx, ch, currentX, startY, pixelSize);
       currentX += digitWidth + spacing;
     }
   }
 
-  // Draw status text below if needed (using small pixel font)
+  // Draw status text below if needed
   if (status) {
-    const statusY = startY + digitHeight + 20;
-    c.font = 'bold 14px monospace';
-    c.textAlign = 'center';
-    c.textBaseline = 'top';
-    c.fillText(status, W / 2, statusY);
+    ctx.font = 'bold 14px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText(status, W / 2, startY + digitHeight + 10);
   }
 
-  const dataURL = _canvas.toDataURL('image/png');
-  console.log('[Canvas] Image generated, length:', dataURL.length);
-  return dataURL;
-}
-
-/* ─── dataURL → Uint8Array (smaller over BLE than base64 string) ──── */
-
-function toBytes(dataURL: string): Uint8Array | string {
+  // Convert to PNG blob, then to arrayBuffer, then to number[]
   try {
-    const b64 = dataURL.split(',')[1] || dataURL;
-    const bin = atob(b64);
-    const u8 = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
-    return u8;
-  } catch {
-    return dataURL;
+    const blob: Blob = await new Promise((resolve, reject) => {
+      _canvas!.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/png');
+    });
+    const buf = await blob.arrayBuffer();
+    const bytes = Array.from(new Uint8Array(buf)); // number[] for best compatibility
+    console.log('[Canvas] PNG bytes generated, length:', bytes.length);
+    return bytes;
+  } catch (error) {
+    console.error('[Canvas] Failed to convert canvas to PNG bytes:', error);
+    return [];
   }
 }
 
@@ -315,39 +310,36 @@ function pushText(bridge: any, content: string) {
 }
 
 /**
- * Fire-and-forget image push.
+ * Push timer image as PNG bytes (number[]) to hardware.
  * Respects the SDK rule "one image at a time" via the imageUpdateInProgress guard.
- * If a previous transfer is still in flight the call is silently skipped –
- * the next tick (1 s later) will pick up the latest time.
+ * Always logs the result for debugging hardware issues.
  */
-function pushImage(bridge: any, seconds: number, status?: string) {
+async function pushImage(bridge: any, seconds: number, status?: string): Promise<void> {
   if (imageUpdateInProgress) {
     console.log('[UI] Image update skipped (already in progress)');
     return;
   }
   imageUpdateInProgress = true;
+  
+  try {
+    const pngBytes = await renderTimerPngBytes(seconds, status);
+    if (pngBytes.length === 0) {
+      console.error('[UI] Failed to generate PNG bytes');
+      return;
+    }
 
-  const url = renderTimerImage(seconds, status);
-  if (!url) {
-    console.error('[UI] Failed to render timer image');
-    imageUpdateInProgress = false;
-    return;
-  }
-
-  console.log('[UI] Pushing timer image update...');
-  bridge.updateImageRawData({
-    containerID: 2,
-    containerName: 'timer-img',
-    imageData: toBytes(url),
-  })
-    .then(() => {
-      console.log('[UI] Image update completed');
-      imageUpdateInProgress = false;
-    })
-    .catch((err: any) => {
-      console.error('[UI] Image update failed:', err);
-      imageUpdateInProgress = false;
+    console.log('[UI] Pushing timer image update, bytes:', pngBytes.length);
+    const result = await bridge.updateImageRawData({
+      containerID: 2,
+      containerName: 'timer-img',
+      imageData: pngBytes, // number[] for best hardware compatibility
     });
+    console.log('[UI] ImageRawDataUpdateResult:', result);
+  } catch (err: any) {
+    console.error('[UI] Image update failed:', err);
+  } finally {
+    imageUpdateInProgress = false;
+  }
 }
 
 
@@ -368,31 +360,10 @@ export async function renderUI(
 
     /* ── IDLE → show preset selection ── */
     if (state === TimerState.IDLE) {
-      // If we're coming from timer screen, rebuild to preset (text-only)
-      if (currentScreenType === 'timer') {
-        const content = buildPresetContent(selectedPreset);
-        const textContainer: any = {
-          xPosition: 0,
-          yPosition: 0,
-          width: 576,
-          height: 288,
-          borderWidth: 0,
-          borderColor: 0,
-          paddingLength: 20,
-          containerID: 1,
-          containerName: 'timer-main',
-          content,
-          isEventCapture: 1,
-        };
-        await bridge.rebuildPageContainer({
-          containerTotalNum: 1,
-          textObject: [textContainer],
-        });
-        currentScreenType = 'preset';
-      } else {
-        // Already on preset screen, just update text
-        pushText(bridge, buildPresetContent(selectedPreset));
-      }
+      // Update text container to show preset selection
+      // Image container stays empty/black (transparent) - no need to clear it
+      pushText(bridge, buildPresetContent(selectedPreset));
+      currentScreenType = 'preset';
       return;
     }
 
@@ -419,7 +390,7 @@ export async function renderUI(
     }
 
     pushText(bridge, txt);
-    pushImage(bridge, remainingSeconds, imgStatus);
+    await pushImage(bridge, remainingSeconds, imgStatus);
   } catch (e) {
     console.error('renderUI error:', e);
   }
@@ -428,10 +399,10 @@ export async function renderUI(
 /* ─── initial container creation ──────────────────────────────────────── */
 
 /**
- * Creates ONLY the text container at startup (SDK limitation: image containers
- * cannot be created with createStartUpPageContainer).
- * When switching to timer mode, we use rebuildPageContainer ONCE to add the
- * image container, then update only the image data (no more rebuilds).
+ * Creates BOTH text and image containers at startup.
+ * This avoids rebuildPageContainer which can be fragile on hardware.
+ * In preset mode: show text, image container is empty/black (transparent).
+ * In timer mode: update text + image.
  */
 export async function createPageContainers(
   bridge: any,
@@ -456,10 +427,23 @@ export async function createPageContainers(
       isEventCapture: 1,
     };
 
-    console.log('[Boot] Creating text container…');
+    // Image container – centered, will be empty/black initially (transparent on G2)
+    const imageContainer: any = {
+      xPosition: 188,   // (576 − 200) / 2
+      yPosition: 40,
+      width: 200,
+      height: 100,
+      borderWidth: 0,
+      borderColor: 0,
+      containerID: 2,
+      containerName: 'timer-img',
+    };
+
+    console.log('[Boot] Creating text + image containers…');
     const result = await bridge.createStartUpPageContainer({
-      containerTotalNum: 1,
+      containerTotalNum: 2,
       textObject: [textContainer],
+      imageObject: [imageContainer],
     });
     console.log('[Boot] Result:', result);
 
@@ -470,7 +454,7 @@ export async function createPageContainers(
       result === 'success';
 
     if (ok) {
-      console.log('[Boot] Container created OK');
+      console.log('[Boot] Containers created OK');
       currentScreenType = 'preset';
     } else {
       console.error('[Boot] Container creation failed:', result);
@@ -484,8 +468,8 @@ export async function createPageContainers(
 }
 
 /**
- * Switch to timer screen: rebuild with text + image containers.
- * Called ONCE when transitioning from preset to timer.
+ * Switch to timer screen: update text container layout and send initial image.
+ * Since both containers already exist (created at startup), we just update them.
  */
 async function switchToTimerScreen(
   bridge: any,
@@ -499,7 +483,7 @@ async function switchToTimerScreen(
     // Reset the image update flag to ensure we can send the image
     imageUpdateInProgress = false;
 
-    // Text container – thin strip at bottom for status + event capture
+    // Update text container to show status at bottom
     let statusText = ' ';
     if (state === TimerState.PAUSED) {
       statusText = '\n\n\n\n\n\n\n\n       PAUSED';
@@ -507,63 +491,16 @@ async function switchToTimerScreen(
       statusText = '\n\n\n\n\n\n\n\n     COMPLETATO';
     }
 
-    const textContainer: any = {
-      xPosition: 0,
-      yPosition: 180,
-      width: 576,
-      height: 108,
-      borderWidth: 0,
-      borderColor: 0,
-      paddingLength: 0,
-      containerID: 1,
-      containerName: 'timer-main',
-      content: statusText,
-      isEventCapture: 1,
-    };
-
-    // Image container – centered for large timer display
-    const imageContainer: any = {
-      xPosition: 188,
-      yPosition: 40,
-      width: 200,
-      height: 100,
-      borderWidth: 0,
-      borderColor: 0,
-      containerID: 2,
-      containerName: 'timer-img',
-    };
-
-    console.log('[UI] Rebuilding to timer screen (one-time)');
-    const rebuildResult = await bridge.rebuildPageContainer({
-      containerTotalNum: 2,
-      textObject: [textContainer],
-      imageObject: [imageContainer],
-    });
-    console.log('[UI] Rebuild result:', rebuildResult);
+    // Update text container (no rebuild needed, just content update)
+    pushText(bridge, statusText);
     currentScreenType = 'timer';
 
-    // Longer delay to ensure container is fully ready on hardware
-    await new Promise(resolve => setTimeout(resolve, 200));
+    // Wait for hardware to be ready (500-800ms for robust settling)
+    await new Promise(resolve => setTimeout(resolve, 600));
     
-    // Generate and send the image
-    const url = renderTimerImage(remainingSeconds, status);
-    if (!url) {
-      console.error('[UI] Failed to generate timer image');
-      return;
-    }
-    
+    // Generate and send the image using PNG bytes
     console.log('[UI] Sending initial timer image...');
-    try {
-      await bridge.updateImageRawData({
-        containerID: 2,
-        containerName: 'timer-img',
-        imageData: toBytes(url),
-      });
-      console.log('[UI] Initial image sent successfully');
-    } catch (err: any) {
-      console.error('[UI] Error sending initial image:', err);
-      imageUpdateInProgress = false; // Reset on error
-    }
+    await pushImage(bridge, remainingSeconds, status);
   } catch (e) {
     console.error('[UI] Error switching to timer screen:', e);
     imageUpdateInProgress = false; // Reset on error
