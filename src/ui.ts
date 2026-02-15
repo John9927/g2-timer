@@ -40,17 +40,21 @@ export function resetPreviousTexts(): void {}
 let currentScreenType: 'preset' | 'timer' | null = null;
 let imageUpdateInProgress = false;
 
-// Reusable canvas – avoids DOM / GC churn on every tick
+// Track last displayed digits to update only what changed
+let lastDisplayedDigits: string = ''; // "MM:SS" format
+
+// Cache for pre-generated digit PNGs (number[])
+// Key: '0'-'9' or ':', Value: number[] (PNG bytes)
+const digitCache: Map<string, number[]> = new Map();
+
+// Canvas for pre-generating digit images (one-time use)
 let _canvas: HTMLCanvasElement | null = null;
 let _ctx: CanvasRenderingContext2D | null = null;
 
 function getCtx(): CanvasRenderingContext2D | null {
   if (!_canvas) {
     _canvas = document.createElement('canvas');
-    _canvas.width = 200;
-    _canvas.height = 100;
     _ctx = _canvas.getContext('2d');
-    console.log('[Canvas] Canvas initialized:', { width: _canvas.width, height: _canvas.height, ctx: !!_ctx });
   }
   return _ctx;
 }
@@ -221,88 +225,79 @@ function drawPixelDigit(
   }
 }
 
+/* ─── Digit container dimensions ──────────────────────────────────────── */
+
+// Each digit container: 60×84 pixels (scale=12, so 5×7 base becomes 60×84)
+const DIGIT_WIDTH = 60;
+const DIGIT_HEIGHT = 84;
+const DIGIT_SCALE = 12;
+const COLON_WIDTH = 24; // Colon is narrower
+const COLON_HEIGHT = 84;
+const CONTAINER_SPACING = 10;
+
 /**
- * Render timer as PNG bytes (number[]) using toBlob() for hardware compatibility.
- * Returns empty array on error.
+ * Pre-generate PNG bytes for a single digit/character and cache it.
+ * Returns cached bytes if available, otherwise generates and caches.
  */
-async function renderTimerPngBytes(seconds: number, status?: string): Promise<number[]> {
+async function getDigitPngBytes(char: string): Promise<number[]> {
+  // Check cache first
+  if (digitCache.has(char)) {
+    return digitCache.get(char)!;
+  }
+
   const ctx = getCtx();
   if (!ctx || !_canvas) {
-    console.error('[Canvas] Context or canvas not available');
+    console.error('[Digit] Context not available');
     return [];
   }
-  const W = _canvas.width, H = _canvas.height;
-  console.log('[Canvas] Rendering timer image:', { seconds, status, W, H });
+
+  // Set canvas size for this digit
+  if (char === ':') {
+    _canvas.width = COLON_WIDTH;
+    _canvas.height = COLON_HEIGHT;
+  } else {
+    _canvas.width = DIGIT_WIDTH;
+    _canvas.height = DIGIT_HEIGHT;
+  }
 
   // Black background (transparent on G2)
   ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, W, H);
+  ctx.fillRect(0, 0, _canvas.width, _canvas.height);
 
   // White pixels (visible on G2)
   ctx.fillStyle = '#FFF';
 
-  const time = formatTime(seconds); // "MM:SS"
-  console.log('[Canvas] Time string:', time);
-  
-  // Calculate scale: we want digits to be as large as possible
-  // Each digit is 5x7 base, we'll scale it up
-  // With scale=6, each digit becomes 30x42 pixels
-  const scale = 6;
-  const pixelSize = scale;
-  const digitWidth = 5 * pixelSize;   // 30
-  const digitHeight = 7 * pixelSize;  // 42
-  const colonWidth = 2 * pixelSize;   // 12 (colon is narrower)
-  const spacing = 2 * pixelSize;      // 12 (space between digits)
+  // Draw the digit
+  const pixelSize = DIGIT_SCALE;
+  drawPixelDigit(ctx, char, 0, 0, pixelSize);
 
-  // Calculate total width: MM:SS = 2 digits + colon + 2 digits = 4 digits + 1 colon
-  const totalWidth = 4 * digitWidth + colonWidth + 3 * spacing; // ~174 pixels
-  const startX = Math.floor((W - totalWidth) / 2);
-  const startY = Math.floor((H - digitHeight) / 2);
-
-  console.log('[Canvas] Layout:', { 
-    totalWidth, 
-    startX, 
-    startY, 
-    digitWidth, 
-    digitHeight,
-    canvasW: W,
-    canvasH: H,
-    fits: totalWidth <= W && digitHeight <= H
-  });
-
-  // Draw each character
-  let currentX = startX;
-  for (const ch of time) {
-    if (ch === ':') {
-      drawPixelDigit(ctx, ':', currentX, startY, pixelSize);
-      currentX += colonWidth + spacing;
-    } else {
-      drawPixelDigit(ctx, ch, currentX, startY, pixelSize);
-      currentX += digitWidth + spacing;
-    }
-  }
-
-  // Draw status text below if needed
-  if (status) {
-    ctx.font = 'bold 14px monospace';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    ctx.fillText(status, W / 2, startY + digitHeight + 10);
-  }
-
-  // Convert to PNG blob, then to arrayBuffer, then to number[]
+  // Convert to PNG bytes
   try {
     const blob: Blob = await new Promise((resolve, reject) => {
       _canvas!.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/png');
     });
     const buf = await blob.arrayBuffer();
-    const bytes = Array.from(new Uint8Array(buf)); // number[] for best compatibility
-    console.log('[Canvas] PNG bytes generated, length:', bytes.length);
+    const bytes = Array.from(new Uint8Array(buf));
+    digitCache.set(char, bytes);
+    console.log(`[Digit] Cached PNG for "${char}", bytes:`, bytes.length);
     return bytes;
   } catch (error) {
-    console.error('[Canvas] Failed to convert canvas to PNG bytes:', error);
+    console.error('[Digit] Failed to generate PNG for', char, error);
     return [];
   }
+}
+
+/**
+ * Pre-generate and cache all digits (0-9) and colon.
+ * Call this once at startup.
+ */
+export async function pregenerateDigitCache(): Promise<void> {
+  console.log('[Digit] Pre-generating digit cache...');
+  const chars = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', ':'];
+  for (const char of chars) {
+    await getDigitPngBytes(char);
+  }
+  console.log('[Digit] Digit cache ready, size:', digitCache.size);
 }
 
 /* ─── low-level SDK wrappers (zero console.log in hot path) ──────────── */
@@ -321,35 +316,118 @@ function pushText(bridge: any, content: string) {
 }
 
 /**
- * Push timer image as PNG bytes (number[]) to hardware.
- * Respects the SDK rule "one image at a time" via the imageUpdateInProgress guard.
- * Always logs the result for debugging hardware issues.
+ * Update individual digit containers. Only updates containers that changed.
+ * Container IDs:
+ *  2 = M (minutes tens)
+ *  3 = M (minutes ones)
+ *  4 = : (colon, fixed, only set once)
+ *  5 = S (seconds tens)
+ *  6 = S (seconds ones)
  */
-async function pushImage(bridge: any, seconds: number, status?: string): Promise<void> {
+async function updateDigitContainers(bridge: any, seconds: number): Promise<void> {
   if (imageUpdateInProgress) {
-    console.log('[UI] Image update skipped (already in progress)');
-    return;
+    return; // Skip if another update is in progress
   }
+
+  const time = formatTime(seconds); // "MM:SS"
+  const [mTens, mOnes, , sTens, sOnes] = time.split(''); // colon is at index 2, we don't need it
+
+  // Compare with last displayed
+  if (time === lastDisplayedDigits) {
+    return; // Nothing changed
+  }
+
   imageUpdateInProgress = true;
-  
+  const updates: Promise<void>[] = [];
+
   try {
-    const pngBytes = await renderTimerPngBytes(seconds, status);
-    if (pngBytes.length === 0) {
-      console.error('[UI] Failed to generate PNG bytes');
-      return;
+    // Update only changed digits
+    if (lastDisplayedDigits[0] !== mTens) {
+      const bytes = await getDigitPngBytes(mTens);
+      if (bytes.length > 0) {
+        updates.push(
+          bridge.updateImageRawData(
+            new ImageRawDataUpdate({
+              containerID: 2,
+              containerName: 'timer-m-tens',
+              imageData: bytes,
+            })
+          ).then((result: any) => console.log('[UI] M tens updated, result:', result))
+          .catch((err: any) => console.error('[UI] M tens update failed:', err))
+        );
+      }
     }
 
-    console.log('[UI] Pushing timer image update, bytes:', pngBytes.length);
-    const result = await bridge.updateImageRawData(
-      new ImageRawDataUpdate({
-        containerID: 2,
-        containerName: 'timer-img',
-        imageData: pngBytes, // number[] for best hardware compatibility
-      })
-    );
-    console.log('[UI] ImageRawDataUpdateResult:', result);
+    if (lastDisplayedDigits[1] !== mOnes) {
+      const bytes = await getDigitPngBytes(mOnes);
+      if (bytes.length > 0) {
+        updates.push(
+          bridge.updateImageRawData(
+            new ImageRawDataUpdate({
+              containerID: 3,
+              containerName: 'timer-m-ones',
+              imageData: bytes,
+            })
+          ).then((result: any) => console.log('[UI] M ones updated, result:', result))
+          .catch((err: any) => console.error('[UI] M ones update failed:', err))
+        );
+      }
+    }
+
+    // Colon is set once (containerID 4)
+    if (lastDisplayedDigits === '') {
+      const bytes = await getDigitPngBytes(':');
+      if (bytes.length > 0) {
+        updates.push(
+          bridge.updateImageRawData(
+            new ImageRawDataUpdate({
+              containerID: 4,
+              containerName: 'timer-colon',
+              imageData: bytes,
+            })
+          ).then((result: any) => console.log('[UI] Colon set, result:', result))
+          .catch((err: any) => console.error('[UI] Colon update failed:', err))
+        );
+      }
+    }
+
+    if (lastDisplayedDigits[3] !== sTens) {
+      const bytes = await getDigitPngBytes(sTens);
+      if (bytes.length > 0) {
+        updates.push(
+          bridge.updateImageRawData(
+            new ImageRawDataUpdate({
+              containerID: 5,
+              containerName: 'timer-s-tens',
+              imageData: bytes,
+            })
+          ).then((result: any) => console.log('[UI] S tens updated, result:', result))
+          .catch((err: any) => console.error('[UI] S tens update failed:', err))
+        );
+      }
+    }
+
+    if (lastDisplayedDigits[4] !== sOnes) {
+      const bytes = await getDigitPngBytes(sOnes);
+      if (bytes.length > 0) {
+        updates.push(
+          bridge.updateImageRawData(
+            new ImageRawDataUpdate({
+              containerID: 6,
+              containerName: 'timer-s-ones',
+              imageData: bytes,
+            })
+          ).then((result: any) => console.log('[UI] S ones updated, result:', result))
+          .catch((err: any) => console.error('[UI] S ones update failed:', err))
+        );
+      }
+    }
+
+    // Wait for all updates (they can run in parallel since SDK handles queue)
+    await Promise.all(updates);
+    lastDisplayedDigits = time;
   } catch (err: any) {
-    console.error('[UI] Image update failed:', err);
+    console.error('[UI] Digit container update failed:', err);
   } finally {
     imageUpdateInProgress = false;
   }
@@ -402,20 +480,16 @@ export async function renderUI(
       return;
     }
 
-    // Already on timer screen – just update text status and image
-    let imgStatus: string | undefined;
+    // Already on timer screen – just update text status and digits
     let txt = ' ';
-
     if (state === TimerState.PAUSED) {
-      imgStatus = 'PAUSED';
       txt = '\n\n\n\n\n\n\n\n       PAUSED';
     } else if (state === TimerState.DONE && isBlinkingVisible) {
-      imgStatus = 'COMPLETATO';
       txt = '\n\n\n\n\n\n\n\n     COMPLETATO';
     }
 
     pushText(bridge, txt);
-    await pushImage(bridge, remainingSeconds, imgStatus);
+    await updateDigitContainers(bridge, remainingSeconds);
   } catch (e) {
     console.error('renderUI error:', e);
   }
@@ -424,10 +498,14 @@ export async function renderUI(
 /* ─── initial container creation ──────────────────────────────────────── */
 
 /**
- * Creates BOTH text and image containers at startup.
- * This avoids rebuildPageContainer which can be fragile on hardware.
- * In preset mode: show text, image container is empty/black (transparent).
- * In timer mode: update text + image.
+ * Creates 5 separate digit containers + 1 text container for status.
+ * Container layout:
+ *  1 = Text container (status, full screen for preset)
+ *  2 = M tens (minutes tens)
+ *  3 = M ones (minutes ones)
+ *  4 = Colon (fixed, set once)
+ *  5 = S tens (seconds tens)
+ *  6 = S ones (seconds ones)
  */
 export async function createPageContainers(
   bridge: any,
@@ -438,7 +516,10 @@ export async function createPageContainers(
   try {
     const content = buildPresetContent(selectedPreset);
 
-    // Use SDK classes for hardware compatibility
+    // Pre-generate digit cache before creating containers
+    await pregenerateDigitCache();
+
+    // Text container (full screen for preset, status strip for timer)
     const textContainer = new TextContainerProperty({
       containerID: 1,
       containerName: 'timer-main',
@@ -453,21 +534,64 @@ export async function createPageContainers(
       isEventCapture: 1,
     });
 
-    const imageContainer = new ImageContainerProperty({
+    // Calculate positions to center the 5 digit containers
+    // Layout: [M tens] [spacing] [M ones] [spacing] [:] [spacing] [S tens] [spacing] [S ones]
+    const totalWidth = 2 * DIGIT_WIDTH + COLON_WIDTH + 4 * CONTAINER_SPACING;
+    const startX = Math.floor((576 - totalWidth) / 2);
+    const startY = Math.floor((288 - DIGIT_HEIGHT) / 2) - 20; // Slightly above center
+
+    // 5 digit containers
+    const mTensContainer = new ImageContainerProperty({
       containerID: 2,
-      containerName: 'timer-img',
-      xPosition: 188,   // (576 − 200) / 2
-      yPosition: 40,
-      width: 200,
-      height: 100,
+      containerName: 'timer-m-tens',
+      xPosition: startX,
+      yPosition: startY,
+      width: DIGIT_WIDTH,
+      height: DIGIT_HEIGHT,
     });
 
-    console.log('[Boot] Creating text + image containers with SDK classes…');
+    const mOnesContainer = new ImageContainerProperty({
+      containerID: 3,
+      containerName: 'timer-m-ones',
+      xPosition: startX + DIGIT_WIDTH + CONTAINER_SPACING,
+      yPosition: startY,
+      width: DIGIT_WIDTH,
+      height: DIGIT_HEIGHT,
+    });
+
+    const colonContainer = new ImageContainerProperty({
+      containerID: 4,
+      containerName: 'timer-colon',
+      xPosition: startX + 2 * DIGIT_WIDTH + 2 * CONTAINER_SPACING,
+      yPosition: startY,
+      width: COLON_WIDTH,
+      height: COLON_HEIGHT,
+    });
+
+    const sTensContainer = new ImageContainerProperty({
+      containerID: 5,
+      containerName: 'timer-s-tens',
+      xPosition: startX + 2 * DIGIT_WIDTH + COLON_WIDTH + 3 * CONTAINER_SPACING,
+      yPosition: startY,
+      width: DIGIT_WIDTH,
+      height: DIGIT_HEIGHT,
+    });
+
+    const sOnesContainer = new ImageContainerProperty({
+      containerID: 6,
+      containerName: 'timer-s-ones',
+      xPosition: startX + 3 * DIGIT_WIDTH + COLON_WIDTH + 4 * CONTAINER_SPACING,
+      yPosition: startY,
+      width: DIGIT_WIDTH,
+      height: DIGIT_HEIGHT,
+    });
+
+    console.log('[Boot] Creating 5 digit containers + text container with SDK classes…');
     const result = await bridge.createStartUpPageContainer(
       new CreateStartUpPageContainer({
-        containerTotalNum: 2,
+        containerTotalNum: 6,
         textObject: [textContainer],
-        imageObject: [imageContainer],
+        imageObject: [mTensContainer, mOnesContainer, colonContainer, sTensContainer, sOnesContainer],
       })
     );
     console.log('[Boot] createStartUpPageContainer result:', result, 'type:', typeof result);
@@ -504,32 +628,22 @@ export async function createPageContainers(
       console.error('[Boot] Test text failed:', err);
     }
 
-    // Test 2: White full image (200x100)
-    console.log('[Boot] Test: Sending white full image…');
+    // Test 2: Send digit "0" to first container to verify it works
+    console.log('[Boot] Test: Sending digit "0" to first container…');
     try {
-      const testCanvas = document.createElement('canvas');
-      testCanvas.width = 200;
-      testCanvas.height = 100;
-      const testCtx = testCanvas.getContext('2d');
-      if (testCtx) {
-        testCtx.fillStyle = '#FFF';
-        testCtx.fillRect(0, 0, 200, 100);
-        const testBlob: Blob = await new Promise((resolve, reject) => {
-          testCanvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/png');
-        });
-        const testBuf = await testBlob.arrayBuffer();
-        const testBytes = Array.from(new Uint8Array(testBuf));
+      const testBytes = await getDigitPngBytes('0');
+      if (testBytes.length > 0) {
         const testResult = await bridge.updateImageRawData(
           new ImageRawDataUpdate({
             containerID: 2,
-            containerName: 'timer-img',
+            containerName: 'timer-m-tens',
             imageData: testBytes,
           })
         );
-        console.log('[Boot] Test image sent, result:', testResult);
+        console.log('[Boot] Test digit sent, result:', testResult);
       }
     } catch (err: any) {
-      console.error('[Boot] Test image failed:', err);
+      console.error('[Boot] Test digit failed:', err);
     }
 
     // Restore preset content after tests
@@ -553,20 +667,20 @@ export async function createPageContainers(
 }
 
 /**
- * Switch to timer screen: update text container layout and send initial image.
- * Since both containers already exist (created at startup), we just update them.
+ * Switch to timer screen: update text container and initialize all digits.
+ * Since all containers already exist (created at startup), we just update them.
  */
 async function switchToTimerScreen(
   bridge: any,
   state: TimerState,
   remainingSeconds: number,
-  status?: string,
+  _status?: string,
 ): Promise<void> {
   if (!bridge) return;
 
   try {
-    // Reset the image update flag to ensure we can send the image
-    imageUpdateInProgress = false;
+    // Reset tracking to force full update
+    lastDisplayedDigits = '';
 
     // Update text container to show status at bottom
     let statusText = ' ';
@@ -576,16 +690,15 @@ async function switchToTimerScreen(
       statusText = '\n\n\n\n\n\n\n\n     COMPLETATO';
     }
 
-    // Update text container (no rebuild needed, just content update)
     pushText(bridge, statusText);
     currentScreenType = 'timer';
 
-    // Wait for hardware to be ready (500-800ms for robust settling)
-    await new Promise(resolve => setTimeout(resolve, 600));
+    // Wait for hardware to be ready
+    await new Promise(resolve => setTimeout(resolve, 300));
     
-    // Generate and send the image using PNG bytes
-    console.log('[UI] Sending initial timer image...');
-    await pushImage(bridge, remainingSeconds, status);
+    // Initialize all digits (this will update all containers)
+    console.log('[UI] Initializing timer digits...');
+    await updateDigitContainers(bridge, remainingSeconds);
   } catch (e) {
     console.error('[UI] Error switching to timer screen:', e);
     imageUpdateInProgress = false; // Reset on error
