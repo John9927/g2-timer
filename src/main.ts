@@ -26,21 +26,6 @@ function clearRemoteStartPending() {
   remoteStartScheduledAt = null;
 }
 
-function getStateLabel(state: TimerState): string {
-  switch (state) {
-    case TimerState.IDLE:
-      return 'Idle';
-    case TimerState.RUNNING:
-      return 'Running';
-    case TimerState.PAUSED:
-      return 'Paused';
-    case TimerState.DONE:
-      return 'Done';
-    default:
-      return state;
-  }
-}
-
 function updateRemoteView() {
   const remoteStatus = document.getElementById('remote-status');
   const btnStartPause = document.getElementById('btn-start-pause') as HTMLButtonElement | null;
@@ -205,30 +190,31 @@ async function init() {
     setupRemoteControl();
 
     // Set up update callback (called every second when running)
-    timerState.setOnUpdate(async () => {
-      updateRemoteView(); // Update phone first so it matches what we send to glasses
+    // Don't await renderUI so the timer never blocks; glasses may skip frames under load but won't get stuck
+    timerState.setOnUpdate(() => {
+      updateRemoteView();
       if (isInForeground && bridge && timerState) {
-        await renderUI(
+        renderUI(
           bridge,
           timerState.getState(),
           timerState.getSelectedPreset(),
           timerState.getRemainingSeconds(),
           timerState.getBlinkVisibility()
-        );
+        ).catch((err) => console.error('[Timer] renderUI:', err));
       }
     });
 
     // Set up state change callback (called when state changes)
-    timerState.setOnStateChange(async () => {
-      updateRemoteView(); // Update phone first so it matches what we send to glasses
+    timerState.setOnStateChange(() => {
+      updateRemoteView();
       if (isInForeground && bridge && timerState) {
-        await renderUI(
+        renderUI(
           bridge,
           timerState.getState(),
           timerState.getSelectedPreset(),
           timerState.getRemainingSeconds(),
           timerState.getBlinkVisibility()
-        );
+        ).catch((err) => console.error('[Timer] renderUI:', err));
       }
     });
 

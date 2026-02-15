@@ -464,6 +464,8 @@ async function applyTimerImages(bridge: any, remainingSeconds: number, forceAll:
   areTimerImagesVisible = true;
 }
 
+const TIMER_IMAGE_UPDATE_TIMEOUT_MS = 2000;
+
 async function updateTimerImages(bridge: any, remainingSeconds: number, forceAll = false): Promise<void> {
   if (imageUpdateInProgress) {
     queueLatestTimerUpdate(bridge, remainingSeconds, forceAll);
@@ -473,16 +475,21 @@ async function updateTimerImages(bridge: any, remainingSeconds: number, forceAll
   imageUpdateInProgress = true;
 
   try {
-    await applyTimerImages(bridge, remainingSeconds, forceAll);
-
-    // Drain queued updates in order to avoid stale frames being applied later.
-    let queued = consumeQueuedTimerUpdate();
-    while (queued) {
-      await applyTimerImages(queued.bridge, queued.remainingSeconds, queued.forceAll);
-      queued = consumeQueuedTimerUpdate();
-    }
+    await Promise.race([
+      (async () => {
+        await applyTimerImages(bridge, remainingSeconds, forceAll);
+        let queued = consumeQueuedTimerUpdate();
+        while (queued) {
+          await applyTimerImages(queued.bridge, queued.remainingSeconds, queued.forceAll);
+          queued = consumeQueuedTimerUpdate();
+        }
+      })(),
+      new Promise<void>((_, reject) =>
+        setTimeout(() => reject(new Error('timer image update timeout')), TIMER_IMAGE_UPDATE_TIMEOUT_MS)
+      ),
+    ]);
   } catch (error) {
-    console.error('[UI] Failed to update timer images:', error);
+    console.error('[UI] Timer images update failed or timed out:', error);
   } finally {
     imageUpdateInProgress = false;
   }
