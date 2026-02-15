@@ -41,6 +41,7 @@ function getCtx(): CanvasRenderingContext2D | null {
     _canvas.width = 200;
     _canvas.height = 100;
     _ctx = _canvas.getContext('2d');
+    console.log('[Canvas] Canvas initialized:', { width: _canvas.width, height: _canvas.height, ctx: !!_ctx });
   }
   return _ctx;
 }
@@ -244,10 +245,19 @@ function renderTimerImage(seconds: number, status?: string): string {
 
   // Calculate total width: MM:SS = 2 digits + colon + 2 digits = 4 digits + 1 colon
   const totalWidth = 4 * digitWidth + colonWidth + 3 * spacing; // ~174 pixels
-  const startX = (W - totalWidth) / 2;
-  const startY = (H - digitHeight) / 2;
+  const startX = Math.max(0, (W - totalWidth) / 2); // Ensure not negative
+  const startY = Math.max(0, (H - digitHeight) / 2); // Ensure not negative
 
-  console.log('[Canvas] Layout:', { totalWidth, startX, startY, digitWidth, digitHeight });
+  console.log('[Canvas] Layout:', { 
+    totalWidth, 
+    startX, 
+    startY, 
+    digitWidth, 
+    digitHeight,
+    canvasW: W,
+    canvasH: H,
+    fits: totalWidth <= W && digitHeight <= H
+  });
 
   // Draw each character
   let currentX = startX;
