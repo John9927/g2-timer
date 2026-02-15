@@ -65,10 +65,12 @@ export function createStatusIcon(state: TimerState): Uint8Array | null {
 
 // Store previous text values for incremental updates
 let previousTexts: Record<number, string> = {};
+let isFirstRender = true;
 
 // Reset previous texts (useful when recreating containers)
 export function resetPreviousTexts(): void {
   previousTexts = {};
+  isFirstRender = true;
 }
 
 // Render all UI elements
@@ -82,58 +84,71 @@ export function renderUI(
   if (!bridge) return;
 
   try {
+    // On first render, always use contentOffset: 0 to replace initial content
+    // On subsequent renders, use incremental updates if possible
+    const useIncremental = !isFirstRender;
+    
+    if (isFirstRender) {
+      console.log('First render - using contentOffset: 0 for all containers');
+    }
+    
     // Update title
     const titleText = 'TIMER';
-    const previousTitle = previousTexts[CONTAINER_IDS.TITLE] || '';
+    const previousTitle = useIncremental ? (previousTexts[CONTAINER_IDS.TITLE] || '') : '';
     const titleMetrics = getTextMetrics(titleText, previousTitle);
     bridge.textContainerUpgrade({
       containerID: CONTAINER_IDS.TITLE,
       containerName: CONTAINER_NAMES.TITLE,
       content: titleText,
       contentLength: titleMetrics.contentLength,
-      contentOffset: titleMetrics.contentOffset,
+      contentOffset: isFirstRender ? 0 : titleMetrics.contentOffset,
     });
     previousTexts[CONTAINER_IDS.TITLE] = titleText;
 
     // Update time display
     const timeText = formatTime(remainingSeconds);
-    const previousTime = previousTexts[CONTAINER_IDS.TIME_DISPLAY] || '';
+    const previousTime = useIncremental ? (previousTexts[CONTAINER_IDS.TIME_DISPLAY] || '') : '';
     const timeMetrics = getTextMetrics(timeText, previousTime);
     bridge.textContainerUpgrade({
       containerID: CONTAINER_IDS.TIME_DISPLAY,
       containerName: CONTAINER_NAMES.TIME_DISPLAY,
       content: timeText,
       contentLength: timeMetrics.contentLength,
-      contentOffset: timeMetrics.contentOffset,
+      contentOffset: isFirstRender ? 0 : timeMetrics.contentOffset,
     });
     previousTexts[CONTAINER_IDS.TIME_DISPLAY] = timeText;
 
     // Update preset row
     const presetText = formatPresetRow(selectedPreset);
-    const previousPreset = previousTexts[CONTAINER_IDS.PRESET_ROW] || '';
+    const previousPreset = useIncremental ? (previousTexts[CONTAINER_IDS.PRESET_ROW] || '') : '';
     const presetMetrics = getTextMetrics(presetText, previousPreset);
     bridge.textContainerUpgrade({
       containerID: CONTAINER_IDS.PRESET_ROW,
       containerName: CONTAINER_NAMES.PRESET_ROW,
       content: presetText,
       contentLength: presetMetrics.contentLength,
-      contentOffset: presetMetrics.contentOffset,
+      contentOffset: isFirstRender ? 0 : presetMetrics.contentOffset,
     });
     previousTexts[CONTAINER_IDS.PRESET_ROW] = presetText;
 
     // Update status (hide text if blinking and not visible)
     const statusText = getStatusText(state);
     const displayStatusText = isBlinkingVisible ? statusText : '';
-    const previousStatus = previousTexts[CONTAINER_IDS.STATUS] || '';
+    const previousStatus = useIncremental ? (previousTexts[CONTAINER_IDS.STATUS] || '') : '';
     const statusMetrics = getTextMetrics(displayStatusText, previousStatus);
     bridge.textContainerUpgrade({
       containerID: CONTAINER_IDS.STATUS,
       containerName: CONTAINER_NAMES.STATUS,
       content: displayStatusText,
       contentLength: statusMetrics.contentLength,
-      contentOffset: statusMetrics.contentOffset,
+      contentOffset: isFirstRender ? 0 : statusMetrics.contentOffset,
     });
     previousTexts[CONTAINER_IDS.STATUS] = displayStatusText;
+    
+    // Mark first render as complete
+    if (isFirstRender) {
+      isFirstRender = false;
+    }
   } catch (error) {
     console.error('Error rendering UI:', error);
   }
@@ -205,6 +220,17 @@ export async function createPageContainers(bridge: any): Promise<boolean> {
     // Reset previous texts when creating new containers
     resetPreviousTexts();
     
+    console.log('Creating containers with:', {
+      totalNum: container.containerTotalNum,
+      containers: textContainers.map(c => ({
+        id: c.containerID,
+        name: c.containerName,
+        content: c.content,
+        pos: `(${c.xPosition}, ${c.yPosition})`,
+        size: `${c.width}x${c.height}`
+      }))
+    });
+    
     const result = await bridge.createStartUpPageContainer(container);
     console.log('CreateStartUpPageContainer result:', result);
     
@@ -213,8 +239,12 @@ export async function createPageContainers(bridge: any): Promise<boolean> {
     const isSuccess = result === StartUpPageCreateResult.success || result === 0 || result === 1 || result === 'success';
     
     if (isSuccess) {
+      console.log('Containers created successfully, waiting for initialization...');
       // Small delay to ensure containers are fully initialized on hardware
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await new Promise(resolve => setTimeout(resolve, 100));
+      console.log('Containers should be ready now');
+    } else {
+      console.error('Container creation failed with result:', result);
     }
     
     return isSuccess;

@@ -88,11 +88,8 @@ async function init() {
       return;
     }
 
-    // Wait a bit for containers to be fully initialized on hardware
-    // This is often needed on real devices but not in simulator
-    await new Promise(resolve => setTimeout(resolve, 100));
-
-    // Initial render
+    // Initial render immediately after container creation
+    // On real hardware, containers should be ready right after creation
     if (timerState) {
       renderUI(
         bridge,
@@ -101,6 +98,20 @@ async function init() {
         timerState.getRemainingSeconds(),
         timerState.getBlinkVisibility()
       );
+      
+      // Also render again after a short delay to ensure it's visible on hardware
+      // Sometimes the first render needs a moment to propagate
+      setTimeout(() => {
+        if (timerState && bridge) {
+          renderUI(
+            bridge,
+            timerState.getState(),
+            timerState.getSelectedPreset(),
+            timerState.getRemainingSeconds(),
+            timerState.getBlinkVisibility()
+          );
+        }
+      }, 200);
     }
 
     // Set up event handlers
