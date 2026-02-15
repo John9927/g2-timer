@@ -10,6 +10,21 @@ let isInForeground = true;
 let debugLog: string[] = [];
 const MAX_DEBUG_LOG = 5; // Keep last 5 log messages
 
+function getStatoLabel(state: TimerState): string {
+  switch (state) {
+    case TimerState.IDLE:
+      return 'IN_ATTESA';
+    case TimerState.RUNNING:
+      return 'IN_CORSO';
+    case TimerState.PAUSED:
+      return 'IN_PAUSA';
+    case TimerState.DONE:
+      return 'COMPLETATO';
+    default:
+      return state;
+  }
+}
+
 // Debug logging function that shows on glasses display
 function debugLogToDisplay(message: string) {
   const timestamp = new Date().toLocaleTimeString();
@@ -46,7 +61,7 @@ function updateDebugView() {
       presetDisplay.textContent = `Durata: ${timerState.getSelectedPreset()} min`;
     }
     if (stateDisplay) {
-      stateDisplay.textContent = `Stato: ${timerState.getState()}`;
+      stateDisplay.textContent = `Stato: ${getStatoLabel(timerState.getState())}`;
     }
   }
 
