@@ -65,6 +65,16 @@ export class TimerStateManager {
     }
   }
 
+  cyclePresetBackward(): void {
+    const currentIndex = PRESETS.indexOf(this.data.selectedPreset as typeof PRESETS[number]);
+    const prevIndex = currentIndex === 0 ? PRESETS.length - 1 : currentIndex - 1;
+    this.data.selectedPreset = PRESETS[prevIndex];
+    this.resetToPreset();
+    if (this.onStateChangeCallback) {
+      this.onStateChangeCallback();
+    }
+  }
+
   resetToPreset(): void {
     this.stopInterval();
     this.stopBlink();

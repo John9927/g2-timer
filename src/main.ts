@@ -266,6 +266,26 @@ function setupEventHandlers() {
           handleGlobalTap(tapCount);
         }
       }
+
+      // Handle swipe events
+      // Check multiple possible event formats for swipe
+      if (event.type === 'swipe' || 
+          event.eventType === 'swipe' || 
+          event.swipeEvent ||
+          (event.type === 'gesture' && (event.direction === 'left' || event.direction === 'right'))) {
+        const swipeEvent = event.swipeEvent || event;
+        const direction = swipeEvent.direction || swipeEvent.swipeDirection || swipeEvent.gestureDirection;
+        
+        console.log('Swipe event detected:', { direction, event });
+        
+        if (direction === 'right' || direction === 'Right' || direction === 1 || direction === 'RightSwipe') {
+          // Swipe right: next preset
+          handleSwipeRight();
+        } else if (direction === 'left' || direction === 'Left' || direction === -1 || direction === 'LeftSwipe') {
+          // Swipe left: previous preset
+          handleSwipeLeft();
+        }
+      }
     });
   } catch (error) {
     console.error('Error setting up event handlers:', error);
@@ -308,6 +328,40 @@ function handleGlobalTap(tapCount: number) {
     // Triple tap: reset
     timerState.resetToPreset();
   }
+}
+
+// Handle swipe right: next preset
+function handleSwipeRight() {
+  if (!timerState) return;
+  timerState.cyclePreset();
+  debugLogToDisplay('Swipe right: next preset');
+  if (bridge) {
+    renderUI(
+      bridge,
+      timerState.getState(),
+      timerState.getSelectedPreset(),
+      timerState.getRemainingSeconds(),
+      timerState.getBlinkVisibility()
+    );
+  }
+  updateDebugView();
+}
+
+// Handle swipe left: previous preset
+function handleSwipeLeft() {
+  if (!timerState) return;
+  timerState.cyclePresetBackward();
+  debugLogToDisplay('Swipe left: previous preset');
+  if (bridge) {
+    renderUI(
+      bridge,
+      timerState.getState(),
+      timerState.getSelectedPreset(),
+      timerState.getRemainingSeconds(),
+      timerState.getBlinkVisibility()
+    );
+  }
+  updateDebugView();
 }
 
 // Cleanup on page unload
