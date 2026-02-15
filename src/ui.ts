@@ -12,29 +12,28 @@ const DISPLAY_WIDTH = 576;
 const DISPLAY_HEIGHT = 288;
 
 const TEXT_CONTAINER_ID = 1;
-const MM_CONTAINER_ID = 2;
-const SC_CONTAINER_ID = 3; // "SS" block
+const MP_CONTAINER_ID = 2; // "M:" block (minute tens + colon)
+const MSS_CONTAINER_ID = 3; // "MSS" block (minute ones + seconds)
 
 const TEXT_CONTAINER_NAME = 'timer-text';
-const MM_CONTAINER_NAME = 'timer-mm';
-const SC_CONTAINER_NAME = 'timer-sc';
+const MP_CONTAINER_NAME = 'timer-mp';
+const MSS_CONTAINER_NAME = 'timer-mss';
 
-const DIGIT_SCALE = 11;
+const DIGIT_SCALE = 10;
 const DIGIT_BASE_WIDTH = 5;
 const DIGIT_BASE_HEIGHT = 7;
 const GAP_BASE = 1;
 const COLON_BASE_WIDTH = 3;
 
-const DIGIT_WIDTH = DIGIT_BASE_WIDTH * DIGIT_SCALE;
 const DIGIT_HEIGHT = DIGIT_BASE_HEIGHT * DIGIT_SCALE;
-const MM_WIDTH = (DIGIT_BASE_WIDTH * 2 + GAP_BASE + COLON_BASE_WIDTH) * DIGIT_SCALE; // "MM:"
-const SC_WIDTH = (DIGIT_BASE_WIDTH + GAP_BASE + DIGIT_BASE_WIDTH) * DIGIT_SCALE; // "SS"
+const MP_WIDTH = (DIGIT_BASE_WIDTH + GAP_BASE + COLON_BASE_WIDTH) * DIGIT_SCALE; // "M:"
+const MSS_WIDTH = (DIGIT_BASE_WIDTH + GAP_BASE + DIGIT_BASE_WIDTH + GAP_BASE + DIGIT_BASE_WIDTH) * DIGIT_SCALE; // "MSS"
 
 const TIMER_GROUP_GAP = 12;
-const TOTAL_TIMER_WIDTH = MM_WIDTH + TIMER_GROUP_GAP + SC_WIDTH;
+const TOTAL_TIMER_WIDTH = MP_WIDTH + TIMER_GROUP_GAP + MSS_WIDTH;
 const TIMER_Y = Math.floor((DISPLAY_HEIGHT - DIGIT_HEIGHT) / 2);
-const MM_X = Math.floor((DISPLAY_WIDTH - TOTAL_TIMER_WIDTH) / 2);
-const SC_X = MM_X + MM_WIDTH + TIMER_GROUP_GAP;
+const MP_X = Math.floor((DISPLAY_WIDTH - TOTAL_TIMER_WIDTH) / 2);
+const MSS_X = MP_X + MP_WIDTH + TIMER_GROUP_GAP;
 
 type PixelPattern = number[][];
 
@@ -151,7 +150,6 @@ let pendingTimerBridge: any = null;
 let pendingTimerSeconds: number | null = null;
 let pendingTimerForceAll = false;
 
-let cacheWarmupStarted = false;
 const imageCache = new Map<string, number[]>();
 
 let canvas: HTMLCanvasElement | null = null;
@@ -279,24 +277,21 @@ async function renderPng(
   }
 }
 
-async function getMinutesPngBytes(minutes: string): Promise<number[]> {
-  const cacheKey = `mm:${minutes}`;
+async function getMinutePrefixPngBytes(minuteTens: string): Promise<number[]> {
+  const cacheKey = `mp:${minuteTens}`;
   if (imageCache.has(cacheKey)) {
     return imageCache.get(cacheKey)!;
   }
 
-  const left = DIGIT_PATTERNS[minutes[0]];
-  const right = DIGIT_PATTERNS[minutes[1]];
-  if (!left || !right) {
+  const tens = DIGIT_PATTERNS[minuteTens];
+  if (!tens) {
     return [];
   }
 
-  const rightX = (DIGIT_BASE_WIDTH + GAP_BASE) * DIGIT_SCALE;
-  const colonX = (DIGIT_BASE_WIDTH + GAP_BASE + DIGIT_BASE_WIDTH + GAP_BASE) * DIGIT_SCALE;
+  const colonX = (DIGIT_BASE_WIDTH + GAP_BASE) * DIGIT_SCALE;
 
-  const bytes = await renderPng(MM_WIDTH, DIGIT_HEIGHT, (drawCtx) => {
-    drawPattern(drawCtx, left, 0, 0, DIGIT_SCALE);
-    drawPattern(drawCtx, right, rightX, 0, DIGIT_SCALE);
+  const bytes = await renderPng(MP_WIDTH, DIGIT_HEIGHT, (drawCtx) => {
+    drawPattern(drawCtx, tens, 0, 0, DIGIT_SCALE);
     drawPattern(drawCtx, COLON_PATTERN, colonX, 0, DIGIT_SCALE);
   });
 
@@ -306,22 +301,25 @@ async function getMinutesPngBytes(minutes: string): Promise<number[]> {
   return bytes;
 }
 
-async function getSecondsBlockPngBytes(seconds: string): Promise<number[]> {
-  const cacheKey = `sc:${seconds}`;
+async function getMinuteSuffixPngBytes(minuteOnes: string, seconds: string): Promise<number[]> {
+  const cacheKey = `mss:${minuteOnes}${seconds}`;
   if (imageCache.has(cacheKey)) {
     return imageCache.get(cacheKey)!;
   }
 
+  const minuteOnesPattern = DIGIT_PATTERNS[minuteOnes];
   const tens = DIGIT_PATTERNS[seconds[0]];
   const ones = DIGIT_PATTERNS[seconds[1]];
-  if (!tens || !ones) {
+  if (!minuteOnesPattern || !tens || !ones) {
     return [];
   }
 
-  const onesX = (DIGIT_BASE_WIDTH + GAP_BASE) * DIGIT_SCALE;
+  const tensX = (DIGIT_BASE_WIDTH + GAP_BASE) * DIGIT_SCALE;
+  const onesX = (DIGIT_BASE_WIDTH + GAP_BASE + DIGIT_BASE_WIDTH + GAP_BASE) * DIGIT_SCALE;
 
-  const bytes = await renderPng(SC_WIDTH, DIGIT_HEIGHT, (drawCtx) => {
-    drawPattern(drawCtx, tens, 0, 0, DIGIT_SCALE);
+  const bytes = await renderPng(MSS_WIDTH, DIGIT_HEIGHT, (drawCtx) => {
+    drawPattern(drawCtx, minuteOnesPattern, 0, 0, DIGIT_SCALE);
+    drawPattern(drawCtx, tens, tensX, 0, DIGIT_SCALE);
     drawPattern(drawCtx, ones, onesX, 0, DIGIT_SCALE);
   });
 
@@ -376,10 +374,8 @@ function pushText(bridge: any, content: string, force = false): void {
 }
 
 function queueLatestTimerUpdate(bridge: any, remainingSeconds: number, forceAll: boolean): void {
-  if (pendingTimerSeconds === null) {
-    pendingTimerBridge = bridge;
-    pendingTimerSeconds = remainingSeconds;
-  }
+  pendingTimerBridge = bridge;
+  pendingTimerSeconds = remainingSeconds;
   pendingTimerForceAll = pendingTimerForceAll || forceAll;
 }
 
@@ -406,24 +402,38 @@ async function applyTimerImages(bridge: any, remainingSeconds: number, forceAll:
     return;
   }
 
-  const minutes = time.slice(0, 2);
+  const minuteTens = time[0];
+  const minuteOnes = time[1];
   const seconds = time.slice(3, 5);
-  const previousMinutes = lastDisplayedTime.slice(0, 2);
+  const previousMinuteTens = lastDisplayedTime[0];
+  const previousMinuteOnes = lastDisplayedTime[1];
   const previousSeconds = lastDisplayedTime.slice(3, 5);
 
-  const shouldUpdateSeconds = forceAll || !areTimerImagesVisible || seconds !== previousSeconds;
-  const shouldUpdateMinutes = forceAll || !areTimerImagesVisible || minutes !== previousMinutes;
+  const shouldUpdatePrefix = forceAll || !areTimerImagesVisible || minuteTens !== previousMinuteTens;
+  const shouldUpdateSuffix =
+    forceAll ||
+    !areTimerImagesVisible ||
+    minuteOnes !== previousMinuteOnes ||
+    seconds !== previousSeconds;
 
-  // First update the fast-changing block (seconds), then minutes.
-  // This avoids the worst "2:00 -> 2:59" artifact when rollovers are slow.
-  if (shouldUpdateSeconds) {
-    const scBytes = await getSecondsBlockPngBytes(seconds);
-    await pushImage(bridge, SC_CONTAINER_ID, SC_CONTAINER_NAME, scBytes);
-  }
+  if (shouldUpdatePrefix && shouldUpdateSuffix && minuteTens !== previousMinuteTens) {
+    // At 10-minute boundaries, update prefix first to avoid huge transient jumps.
+    const mpBytes = await getMinutePrefixPngBytes(minuteTens);
+    await pushImage(bridge, MP_CONTAINER_ID, MP_CONTAINER_NAME, mpBytes);
 
-  if (shouldUpdateMinutes) {
-    const mmBytes = await getMinutesPngBytes(minutes);
-    await pushImage(bridge, MM_CONTAINER_ID, MM_CONTAINER_NAME, mmBytes);
+    const mssBytes = await getMinuteSuffixPngBytes(minuteOnes, seconds);
+    await pushImage(bridge, MSS_CONTAINER_ID, MSS_CONTAINER_NAME, mssBytes);
+  } else {
+    // Normal path: suffix first keeps minute rollover visually coherent.
+    if (shouldUpdateSuffix) {
+      const mssBytes = await getMinuteSuffixPngBytes(minuteOnes, seconds);
+      await pushImage(bridge, MSS_CONTAINER_ID, MSS_CONTAINER_NAME, mssBytes);
+    }
+
+    if (shouldUpdatePrefix) {
+      const mpBytes = await getMinutePrefixPngBytes(minuteTens);
+      await pushImage(bridge, MP_CONTAINER_ID, MP_CONTAINER_NAME, mpBytes);
+    }
   }
 
   lastDisplayedTime = time;
@@ -478,11 +488,11 @@ async function clearTimerImages(bridge: any, force = false): Promise<void> {
   imageUpdateInProgress = true;
 
   try {
-    const blankMM = await getBlankPngBytes('blank-mm', MM_WIDTH, DIGIT_HEIGHT);
-    const blankSC = await getBlankPngBytes('blank-sc', SC_WIDTH, DIGIT_HEIGHT);
+    const blankMP = await getBlankPngBytes('blank-mp', MP_WIDTH, DIGIT_HEIGHT);
+    const blankMSS = await getBlankPngBytes('blank-mss', MSS_WIDTH, DIGIT_HEIGHT);
 
-    await pushImage(bridge, MM_CONTAINER_ID, MM_CONTAINER_NAME, blankMM);
-    await pushImage(bridge, SC_CONTAINER_ID, SC_CONTAINER_NAME, blankSC);
+    await pushImage(bridge, MP_CONTAINER_ID, MP_CONTAINER_NAME, blankMP);
+    await pushImage(bridge, MSS_CONTAINER_ID, MSS_CONTAINER_NAME, blankMSS);
 
     lastDisplayedTime = '';
     areTimerImagesVisible = false;
@@ -491,27 +501,6 @@ async function clearTimerImages(bridge: any, force = false): Promise<void> {
   } finally {
     imageUpdateInProgress = false;
   }
-}
-
-async function warmupCache(selectedPreset: number): Promise<void> {
-  const presetMinutes = String(Math.min(99, Math.max(0, selectedPreset))).padStart(2, '0');
-
-  await getMinutesPngBytes('00');
-  await getMinutesPngBytes(presetMinutes);
-
-  for (let sec = 0; sec < 60; sec++) {
-    await getSecondsBlockPngBytes(String(sec).padStart(2, '0'));
-  }
-}
-
-function startWarmup(selectedPreset: number): void {
-  if (cacheWarmupStarted) {
-    return;
-  }
-  cacheWarmupStarted = true;
-  void warmupCache(selectedPreset).catch((error) => {
-    console.warn('[UI] Cache warmup failed:', error);
-  });
 }
 
 export async function renderUI(
@@ -578,21 +567,21 @@ export async function createPageContainers(bridge: any, selectedPreset = 5): Pro
       isEventCapture: 1,
     });
 
-    const mmContainer = new ImageContainerProperty({
-      containerID: MM_CONTAINER_ID,
-      containerName: MM_CONTAINER_NAME,
-      xPosition: MM_X,
+    const mpContainer = new ImageContainerProperty({
+      containerID: MP_CONTAINER_ID,
+      containerName: MP_CONTAINER_NAME,
+      xPosition: MP_X,
       yPosition: TIMER_Y,
-      width: MM_WIDTH,
+      width: MP_WIDTH,
       height: DIGIT_HEIGHT,
     });
 
-    const scContainer = new ImageContainerProperty({
-      containerID: SC_CONTAINER_ID,
-      containerName: SC_CONTAINER_NAME,
-      xPosition: SC_X,
+    const mssContainer = new ImageContainerProperty({
+      containerID: MSS_CONTAINER_ID,
+      containerName: MSS_CONTAINER_NAME,
+      xPosition: MSS_X,
       yPosition: TIMER_Y,
-      width: SC_WIDTH,
+      width: MSS_WIDTH,
       height: DIGIT_HEIGHT,
     });
 
@@ -600,7 +589,7 @@ export async function createPageContainers(bridge: any, selectedPreset = 5): Pro
       new CreateStartUpPageContainer({
         containerTotalNum: 3,
         textObject: [textContainer],
-        imageObject: [mmContainer, scContainer],
+        imageObject: [mpContainer, mssContainer],
       }),
     );
 
@@ -618,7 +607,6 @@ export async function createPageContainers(bridge: any, selectedPreset = 5): Pro
     pendingTimerForceAll = false;
 
     await clearTimerImages(bridge, true);
-    startWarmup(selectedPreset);
 
     return true;
   } catch (error) {
