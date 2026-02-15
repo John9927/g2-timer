@@ -211,18 +211,33 @@ export function resetPreviousTexts(): void {
 }
 
 function buildPresetContent(selectedPreset: number): string {
-  const col1 = [1, 3, 5, 10];
-  const col2 = [15, 30, 60];
-  const fmt = (preset: number, isSelected: boolean) => (isSelected ? `> ${preset} <` : `  ${preset}  `);
-  const lines: string[] = [];
+  const selectedIndex = PRESETS.indexOf(selectedPreset as (typeof PRESETS)[number]);
+  const safeIndex = selectedIndex >= 0 ? selectedIndex : 0;
+  const previous = PRESETS[(safeIndex - 1 + PRESETS.length) % PRESETS.length];
+  const current = PRESETS[safeIndex];
+  const next = PRESETS[(safeIndex + 1) % PRESETS.length];
 
-  for (let i = 0; i < Math.max(col1.length, col2.length); i++) {
-    const left = i < col1.length ? fmt(col1[i], col1[i] === selectedPreset) : '        ';
-    const right = i < col2.length ? fmt(col2[i], col2[i] === selectedPreset) : '        ';
-    lines.push(`${left}    ${right}`);
-  }
+  const fmt = (value: number) => String(value).padStart(2, '0');
+  const innerWidth = 28;
+  const border = `+${'-'.repeat(innerWidth)}+`;
+  const center = (text: string) => {
+    const clipped = text.length > innerWidth ? text.slice(0, innerWidth) : text;
+    const leftPad = Math.floor((innerWidth - clipped.length) / 2);
+    const rightPad = innerWidth - clipped.length - leftPad;
+    return `|${' '.repeat(leftPad)}${clipped}${' '.repeat(rightPad)}|`;
+  };
 
-  return `Scegli minuti\n\n${lines.join('\n')}\n\nSwipe: cambia  Tap: avvia`;
+  return [
+    border,
+    center('SELEZIONA MINUTI'),
+    center(''),
+    center(`[ ${fmt(current)} MIN ]`),
+    center(`< ${fmt(previous)}      ${fmt(next)} >`),
+    center(''),
+    center('SWIPE = CAMBIA'),
+    center('TAP = AVVIA'),
+    border,
+  ].join('\n');
 }
 
 function buildTimerOverlayText(state: TimerState, isBlinkingVisible: boolean): string {
