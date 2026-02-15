@@ -59,6 +59,7 @@ export function resetPreviousTexts(): void {
 }
 
 // Render all UI elements
+// SIMPLIFIED: Update single container like working project
 export function renderUI(
   bridge: any,
   state: TimerState,
@@ -70,74 +71,28 @@ export function renderUI(
   if (!bridge) return;
 
   try {
-    // If there's a debug message, show it on the status container temporarily
-    if (debugMessage) {
-      bridge.textContainerUpgrade({
-        containerID: CONTAINER_IDS.STATUS,
-        containerName: CONTAINER_NAMES.STATUS,
-        content: debugMessage,
-        contentLength: debugMessage.length,
-        contentOffset: 0,
-      });
-      // After 2 seconds, restore normal status
-      setTimeout(() => {
-        if (bridge) {
-          const statusText = getStatusText(state);
-          const displayStatusText = isBlinkingVisible ? statusText : '';
-          const statusMetrics = getTextMetrics(displayStatusText);
-          bridge.textContainerUpgrade({
-            containerID: CONTAINER_IDS.STATUS,
-            containerName: CONTAINER_NAMES.STATUS,
-            content: displayStatusText,
-            contentLength: statusMetrics.contentLength,
-            contentOffset: statusMetrics.contentOffset,
-          });
-        }
-      }, 2000);
-    }
-    // Update title
-    const titleText = 'TIMER';
-    const titleMetrics = getTextMetrics(titleText);
-    bridge.textContainerUpgrade({
-      containerID: CONTAINER_IDS.TITLE,
-      containerName: CONTAINER_NAMES.TITLE,
-      content: titleText,
-      contentLength: titleMetrics.contentLength,
-      contentOffset: titleMetrics.contentOffset,
-    });
-
-    // Update time display
+    // Build content for single container
     const timeText = formatTime(remainingSeconds);
-    const timeMetrics = getTextMetrics(timeText);
-    bridge.textContainerUpgrade({
-      containerID: CONTAINER_IDS.TIME_DISPLAY,
-      containerName: CONTAINER_NAMES.TIME_DISPLAY,
-      content: timeText,
-      contentLength: timeMetrics.contentLength,
-      contentOffset: timeMetrics.contentOffset,
-    });
-
-    // Update preset row
     const presetText = formatPresetRow(selectedPreset);
-    const presetMetrics = getTextMetrics(presetText);
-    bridge.textContainerUpgrade({
-      containerID: CONTAINER_IDS.PRESET_ROW,
-      containerName: CONTAINER_NAMES.PRESET_ROW,
-      content: presetText,
-      contentLength: presetMetrics.contentLength,
-      contentOffset: presetMetrics.contentOffset,
-    });
-
-    // Update status (hide text if blinking and not visible)
     const statusText = getStatusText(state);
     const displayStatusText = isBlinkingVisible ? statusText : '';
-    const statusMetrics = getTextMetrics(displayStatusText);
+    
+    let content = `TIMER\n\n${timeText}\n\n${presetText}\n\n${displayStatusText}`;
+    
+    // If debug message, show it instead
+    if (debugMessage) {
+      content = debugMessage;
+    }
+    
+    const metrics = getTextMetrics(content);
+    
+    // Update single container (ID: 1, like working project)
     bridge.textContainerUpgrade({
-      containerID: CONTAINER_IDS.STATUS,
-      containerName: CONTAINER_NAMES.STATUS,
-      content: displayStatusText,
-      contentLength: statusMetrics.contentLength,
-      contentOffset: statusMetrics.contentOffset,
+      containerID: 1,
+      containerName: "timer-main",
+      content: content,
+      contentLength: metrics.contentLength,
+      contentOffset: metrics.contentOffset,
     });
   } catch (error) {
     console.error('Error rendering UI:', error);
@@ -149,70 +104,25 @@ export async function createPageContainers(bridge: any): Promise<boolean> {
   if (!bridge) return false;
 
   try {
-    // Create text containers following the SDK structure
-    // Based on the existing project, use minimal required properties
-    const textContainers = [
-      // Title
-      {
-        containerID: CONTAINER_IDS.TITLE,
-        containerName: CONTAINER_NAMES.TITLE,
-        xPosition: LAYOUT.PADDING_X,
-        yPosition: LAYOUT.TITLE_Y,
-        width: CANVAS_WIDTH - LAYOUT.PADDING_X * 2,
-        height: LAYOUT.TITLE_HEIGHT,
-        content: 'TIMER',
-        isEventCapture: 1, // Enable tap events
-        paddingLength: 5,
-        borderWidth: 1,
-        borderColor: 15, // white border to make it visible
-      },
-      // Time display
-      {
-        containerID: CONTAINER_IDS.TIME_DISPLAY,
-        containerName: CONTAINER_NAMES.TIME_DISPLAY,
-        xPosition: LAYOUT.PADDING_X,
-        yPosition: LAYOUT.TIME_Y,
-        width: CANVAS_WIDTH - LAYOUT.PADDING_X * 2,
-        height: LAYOUT.TIME_HEIGHT,
-        content: '05:00',
-        isEventCapture: 1, // Enable tap events
-        paddingLength: 5,
-        borderWidth: 1,
-        borderColor: 15, // white border to make it visible
-      },
-      // Preset row
-      {
-        containerID: CONTAINER_IDS.PRESET_ROW,
-        containerName: CONTAINER_NAMES.PRESET_ROW,
-        xPosition: LAYOUT.PADDING_X,
-        yPosition: LAYOUT.PRESET_Y,
-        width: CANVAS_WIDTH - LAYOUT.PADDING_X * 2,
-        height: LAYOUT.PRESET_HEIGHT,
-        content: '1 3 5 10 15 30 60',
-        isEventCapture: 1, // Enable tap events
-        paddingLength: 5,
-        borderWidth: 1,
-        borderColor: 15, // white border to make it visible
-      },
-      // Status
-      {
-        containerID: CONTAINER_IDS.STATUS,
-        containerName: CONTAINER_NAMES.STATUS,
-        xPosition: LAYOUT.PADDING_X,
-        yPosition: LAYOUT.STATUS_Y,
-        width: CANVAS_WIDTH - LAYOUT.PADDING_X * 2 - LAYOUT.STATUS_ICON_SIZE - 10,
-        height: LAYOUT.STATUS_HEIGHT,
-        content: 'IDLE',
-        isEventCapture: 1, // Enable tap events
-        paddingLength: 5,
-        borderWidth: 1,
-        borderColor: 15, // white border to make it visible
-      },
-    ];
+    // SIMPLIFIED: Create a SINGLE large container like the working project
+    // This is a test to see if at least ONE container appears on glasses
+    const textContainer: any = {
+      xPosition: 20,
+      yPosition: 20,
+      width: 536, // 576 - 40 (margins)
+      height: 248, // 288 - 40 (margins)
+      borderWidth: 1,
+      borderColor: 15, // white border to make it visible
+      paddingLength: 10,
+      containerID: 1,
+      containerName: "timer-main",
+      content: "TIMER\n\n05:00\n\n1 3 5 10 15 30 60\n\nIDLE",
+      isEventCapture: 1,
+    };
 
-    const container = {
-      containerTotalNum: textContainers.length,
-      textObject: textContainers,
+    const container: any = {
+      containerTotalNum: 1,
+      textObject: [textContainer],
     };
 
     // Reset previous texts when creating new containers
@@ -220,13 +130,13 @@ export async function createPageContainers(bridge: any): Promise<boolean> {
     
     console.log('Creating containers with:', {
       totalNum: container.containerTotalNum,
-      containers: textContainers.map(c => ({
-        id: c.containerID,
-        name: c.containerName,
-        content: c.content,
-        pos: `(${c.xPosition}, ${c.yPosition})`,
-        size: `${c.width}x${c.height}`
-      }))
+      container: {
+        id: textContainer.containerID,
+        name: textContainer.containerName,
+        content: textContainer.content,
+        pos: `(${textContainer.xPosition}, ${textContainer.yPosition})`,
+        size: `${textContainer.width}x${textContainer.height}`
+      }
     });
     
     console.log('[Boot] 📺 Creazione contenitore display...');
