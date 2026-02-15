@@ -6,9 +6,7 @@ import {
   StartUpPageCreateResult,
   CreateStartUpPageContainer,
   TextContainerProperty,
-  ImageContainerProperty,
   TextContainerUpgrade,
-  ImageRawDataUpdate,
 } from '@evenrealities/even_hub_sdk';
 
 /* ─── helpers ─────────────────────────────────────────────────────────── */
