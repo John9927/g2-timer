@@ -277,25 +277,41 @@ function setupEventHandlers() {
       }
 
       // Handle tap events (CLICK_EVENT = 0, but SDK normalizes 0 to undefined)
+      // Single tap should start/pause timer, NOT change preset
       // Check both textEvent and direct eventType
       if (event.textEvent) {
         const textEvent = event.textEvent;
         const eventType = textEvent.eventType;
         
         // CLICK_EVENT = 0, but SDK may normalize to undefined
+        // Only handle single clicks here (not scroll events)
         if (eventType === 0 || eventType === undefined) {
           const containerID = textEvent.containerID;
           console.log('Click event detected:', { containerID, textEvent });
-          handleContainerTap(containerID, 1);
+          // Single tap: start/pause timer
+          handleSingleTap();
         }
       } else if (event.type === 'tap' || event.eventType === 'tap' || event.eventType === 0 || event.eventType === undefined) {
-        const containerID = event.containerID || event.containerId;
         const tapCount = event.tapCount || event.taps || 1;
 
-        if (containerID) {
-          handleContainerTap(containerID, tapCount);
-        } else {
-          handleGlobalTap(tapCount);
+        // Single tap: start/pause timer
+        if (tapCount === 1) {
+          handleSingleTap();
+        } else if (tapCount === 2) {
+          // Double tap: reset timer
+          if (timerState) {
+            timerState.resetToPreset();
+            if (bridge) {
+              renderUI(
+                bridge,
+                timerState.getState(),
+                timerState.getSelectedPreset(),
+                timerState.getRemainingSeconds(),
+                timerState.getBlinkVisibility()
+              );
+            }
+            updateDebugView();
+          }
         }
       }
 
@@ -305,42 +321,22 @@ function setupEventHandlers() {
   }
 }
 
-// Handle container-specific taps
-function handleContainerTap(containerID: number | string, tapCount: number) {
-  if (!timerState) return;
-
-  // Convert to number if string
-  const id = typeof containerID === 'string' ? parseInt(containerID, 10) : containerID;
-
-  if (id === CONTAINER_IDS.PRESET_ROW) {
-    // Tap on preset row: cycle preset
-    timerState.cyclePreset();
-  } else if (containerID === CONTAINER_IDS.TIME_DISPLAY) {
-    // Tap on time display: start/pause toggle
-    timerState.toggleStartPause();
-  } else if (
-    containerID === CONTAINER_IDS.TITLE ||
-    containerID === CONTAINER_IDS.STATUS
-  ) {
-    // Tap on title or status: reset
-    timerState.resetToPreset();
-  }
-}
-
-// Handle global taps (multi-tap if supported)
-function handleGlobalTap(tapCount: number) {
-  if (!timerState) return;
-
-  if (tapCount === 1) {
-    // Single tap: cycle preset
-    timerState.cyclePreset();
-  } else if (tapCount === 2) {
-    // Double tap: start/pause toggle
-    timerState.toggleStartPause();
-  } else if (tapCount === 3) {
-    // Triple tap: reset
-    timerState.resetToPreset();
-  }
+// Handle single tap: start/pause timer
+function handleSingleTap() {
+  if (!timerState || !bridge) return;
+  
+  console.log('Single tap: start/pause timer');
+  timerState.toggleStartPause();
+  debugLogToDisplay('Tap: timer toggled');
+  
+  renderUI(
+    bridge,
+    timerState.getState(),
+    timerState.getSelectedPreset(),
+    timerState.getRemainingSeconds(),
+    timerState.getBlinkVisibility()
+  );
+  updateDebugView();
 }
 
 // Handle swipe right: next preset (SCROLL_TOP_EVENT = 1)
