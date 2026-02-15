@@ -50,6 +50,10 @@ let currentScreenType: 'preset' | 'timer' | null = null;
 // Guard against concurrent image updates
 let imageUpdateInProgress = false;
 
+// Track last displayed time to avoid unnecessary image updates
+let lastDisplayedMinutes = -1;
+let lastDisplayedState: TimerState | null = null;
+
 // ── Preset content builder (shared by multiple functions) ──────────────
 function buildPresetContent(selectedPreset: number): string {
   const col1 = [1, 3, 5, 10];
@@ -195,15 +199,24 @@ async function renderTimerScreen(
   if (!bridge) return;
 
   try {
+    // Reset tracking to force immediate image update
+    lastDisplayedMinutes = -1;
+    lastDisplayedState = null;
+    
+    const timeStr = formatTime(remainingSeconds);
+    
     // Status text (shown in the text container below the image)
     let statusText = '';
     let statusForImage = '';
     if (state === TimerState.PAUSED) {
-      statusText = '\n       PAUSED';
+      statusText = `\n       ${timeStr}\n       PAUSED`;
       statusForImage = 'PAUSED';
     } else if (state === TimerState.DONE && isBlinkingVisible) {
-      statusText = '\n     COMPLETATO';
+      statusText = `\n       ${timeStr}\n     COMPLETATO`;
       statusForImage = 'COMPLETATO';
+    } else {
+      // Running: show time immediately
+      statusText = `\n       ${timeStr}`;
     }
 
     // Text container – thin strip at the bottom for status + event capture
@@ -217,7 +230,7 @@ async function renderTimerScreen(
       paddingLength: 0,
       containerID: 1,
       containerName: 'timer-main',
-      content: statusText || '\n',
+      content: statusText,
       isEventCapture: 1,
     };
 
@@ -240,8 +253,8 @@ async function renderTimerScreen(
     console.log('[UI] Rebuild result:', rebuildResult);
     currentScreenType = 'timer';
 
-    // Small delay to ensure container is ready (hardware sometimes needs this)
-    await new Promise(resolve => setTimeout(resolve, 100));
+    // Minimal delay to ensure container is ready (hardware sometimes needs this)
+    await new Promise(resolve => setTimeout(resolve, 50));
 
     // Now push the actual image data (must come AFTER container creation)
     const dataURL = renderTimerToBase64(remainingSeconds, statusForImage || undefined);
@@ -285,73 +298,92 @@ async function renderTimerScreen(
 
 // Called every second while the timer is already showing – just updates the
 // image data (no layout rebuild needed).
+// OPTIMIZATION: Only update image when minutes change (not every second)
+// to avoid SDK queue delays. Show seconds in text container instead.
 async function updateTimerScreen(
   bridge: any,
   state: TimerState,
   remainingSeconds: number,
   isBlinkingVisible: boolean = true,
 ): Promise<void> {
-  if (!bridge || imageUpdateInProgress) return;
+  if (!bridge) return;
 
-  imageUpdateInProgress = true;
-  try {
-    // Determine status
-    let statusText = '';
-    let statusForImage = '';
-    if (state === TimerState.PAUSED) {
-      statusText = '\n       PAUSED';
-      statusForImage = 'PAUSED';
-    } else if (state === TimerState.DONE && isBlinkingVisible) {
-      statusText = '\n     COMPLETATO';
-      statusForImage = 'COMPLETATO';
-    }
+  const currentMinutes = Math.floor(remainingSeconds / 60);
+  const timeStr = formatTime(remainingSeconds);
+  
+  // Determine status
+  let statusText = '';
+  let statusForImage = '';
+  if (state === TimerState.PAUSED) {
+    statusText = `\n       ${timeStr}\n       PAUSED`;
+    statusForImage = 'PAUSED';
+  } else if (state === TimerState.DONE && isBlinkingVisible) {
+    statusText = `\n       ${timeStr}\n     COMPLETATO`;
+    statusForImage = 'COMPLETATO';
+  } else {
+    // Running: show time in text container (fast update)
+    statusText = `\n       ${timeStr}`;
+  }
 
-    // Update the text strip (status)
-    const statusContent = statusText || '\n';
-    const metrics = getTextMetrics(statusContent);
-    bridge.textContainerUpgrade({
-      containerID: 1,
-      containerName: 'timer-main',
-      content: statusContent,
-      contentLength: metrics.contentLength,
-      contentOffset: metrics.contentOffset,
-    });
+  // Always update text container (fast, no queue issues)
+  const metrics = getTextMetrics(statusText);
+  bridge.textContainerUpgrade({
+    containerID: 1,
+    containerName: 'timer-main',
+    content: statusText,
+    contentLength: metrics.contentLength,
+    contentOffset: metrics.contentOffset,
+  });
 
-    // Update the timer image
-    const dataURL = renderTimerToBase64(remainingSeconds, statusForImage || undefined);
-    if (!dataURL) {
-      console.error('[UI] Failed to generate timer image in update');
-      return;
-    }
-    
-    // Convert to Uint8Array (SDK accepts both)
-    let imageData: string | Uint8Array = dataURL;
+  // Only update image when:
+  // 1. Minutes changed (not every second)
+  // 2. State changed (PAUSED/DONE)
+  // 3. First time (lastDisplayedMinutes === -1)
+  const shouldUpdateImage = 
+    currentMinutes !== lastDisplayedMinutes ||
+    state !== lastDisplayedState ||
+    lastDisplayedMinutes === -1;
+
+  if (shouldUpdateImage && !imageUpdateInProgress) {
+    imageUpdateInProgress = true;
     try {
-      const base64Payload = dataURL.includes(',') ? dataURL.split(',')[1] : dataURL;
-      const binaryString = atob(base64Payload);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
+      // Update image with current time (shows MM:SS, but only updates when minutes change)
+      const dataURL = renderTimerToBase64(remainingSeconds, statusForImage || undefined);
+      if (!dataURL) {
+        console.error('[UI] Failed to generate timer image in update');
+        return;
       }
-      imageData = bytes;
-    } catch (convError) {
-      // Use base64 string as fallback
-    }
-    
-    try {
+      
+      // Convert to Uint8Array (SDK accepts both)
+      let imageData: string | Uint8Array = dataURL;
+      try {
+        const base64Payload = dataURL.includes(',') ? dataURL.split(',')[1] : dataURL;
+        const binaryString = atob(base64Payload);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        imageData = bytes;
+      } catch (convError) {
+        // Use base64 string as fallback
+      }
+      
+      console.log('[UI] Updating image (minute/state changed)');
       const imageResult = await bridge.updateImageRawData({
         containerID: 2,
         containerName: 'timer-img',
         imageData: imageData,
       });
       console.log('[UI] Image update result (periodic):', imageResult);
+      
+      // Track what we displayed
+      lastDisplayedMinutes = currentMinutes;
+      lastDisplayedState = state;
     } catch (imgError) {
       console.error('[UI] Error updating image:', imgError);
+    } finally {
+      imageUpdateInProgress = false;
     }
-  } catch (error) {
-    console.error('Error updating timer screen:', error);
-  } finally {
-    imageUpdateInProgress = false;
   }
 }
 
