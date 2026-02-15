@@ -309,15 +309,20 @@ async function pregenerateDigitCache(): Promise<void> {
 
 function pushText(bridge: any, content: string) {
   const m = getTextMetrics(content);
-  bridge.textContainerUpgrade(
-    new TextContainerUpgrade({
-      containerID: 1,
-      containerName: 'timer-main',
-      content,
-      contentLength: m.contentLength,
-      contentOffset: m.contentOffset,
-    })
-  );
+  console.log('[UI] pushText:', content.substring(0, 50), 'length:', m.contentLength);
+  try {
+    bridge.textContainerUpgrade(
+      new TextContainerUpgrade({
+        containerID: 1,
+        containerName: 'timer-main',
+        content,
+        contentLength: m.contentLength,
+        contentOffset: m.contentOffset,
+      })
+    );
+  } catch (err: any) {
+    console.error('[UI] pushText failed:', err);
+  }
 }
 
 /**
