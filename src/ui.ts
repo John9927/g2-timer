@@ -202,13 +202,16 @@ export async function renderUI(
 
     console.log('[UI] renderUI called:', { state, needsRebuild, currentScreenState });
 
+    // Always rebuild when state changes, or use upgrade for updates
     // Show preset selection when IDLE
     if (state === TimerState.IDLE) {
       if (needsRebuild) {
+        console.log('[UI] Rebuilding to preset selection screen');
         await renderPresetSelection(bridge, selectedPreset);
         currentScreenState = state;
       } else {
         // Just update content if already showing preset selection
+        console.log('[UI] Updating preset selection content');
         const presetLines = PRESETS.map((preset) => {
           if (preset === selectedPreset) {
             return `  > ${preset} min  <`;
@@ -217,21 +220,30 @@ export async function renderUI(
         }).join('\n');
         const content = `Scegli i minuti\n\n${presetLines}\n\nSwipe per cambiare\nTocca per avviare`;
         const metrics = getTextMetrics(content);
-        bridge.textContainerUpgrade({
-          containerID: 1,
-          containerName: "preset-selection",
-          content: content,
-          contentLength: metrics.contentLength,
-          contentOffset: metrics.contentOffset,
-        });
+        try {
+          await bridge.textContainerUpgrade({
+            containerID: 1,
+            containerName: "preset-selection",
+            content: content,
+            contentLength: metrics.contentLength,
+            contentOffset: metrics.contentOffset,
+          });
+          console.log('[UI] textContainerUpgrade success');
+        } catch (err) {
+          console.error('[UI] textContainerUpgrade failed, rebuilding:', err);
+          await renderPresetSelection(bridge, selectedPreset);
+          currentScreenState = state;
+        }
       }
     } else {
       // Show timer screen when RUNNING, PAUSED, or DONE
       if (needsRebuild) {
+        console.log('[UI] Rebuilding to timer screen');
         await renderTimerScreen(bridge, state, remainingSeconds, isBlinkingVisible);
         currentScreenState = state;
       } else {
         // Just update time if already showing timer screen
+        console.log('[UI] Updating timer content');
         const timeText = formatTime(remainingSeconds);
         const paddingTop = '\n\n\n\n\n\n';
         const paddingBottom = '\n\n\n\n\n\n';
@@ -244,13 +256,20 @@ export async function renderUI(
         }
         
         const metrics = getTextMetrics(content);
-        bridge.textContainerUpgrade({
-          containerID: 1,
-          containerName: "timer-display",
-          content: content,
-          contentLength: metrics.contentLength,
-          contentOffset: metrics.contentOffset,
-        });
+        try {
+          await bridge.textContainerUpgrade({
+            containerID: 1,
+            containerName: "timer-display",
+            content: content,
+            contentLength: metrics.contentLength,
+            contentOffset: metrics.contentOffset,
+          });
+          console.log('[UI] textContainerUpgrade success');
+        } catch (err) {
+          console.error('[UI] textContainerUpgrade failed, rebuilding:', err);
+          await renderTimerScreen(bridge, state, remainingSeconds, isBlinkingVisible);
+          currentScreenState = state;
+        }
       }
     }
   } catch (error) {
@@ -272,6 +291,8 @@ export async function createPageContainers(bridge: any, selectedPreset: number =
     }).join('\n');
 
     const content = `Scegli i minuti\n\n${presetLines}\n\nSwipe per cambiare\nTocca per avviare`;
+
+    console.log('[UI] Creating initial container with content:', content.substring(0, 100) + '...');
 
     const textContainer: any = {
       xPosition: 0,
@@ -295,25 +316,22 @@ export async function createPageContainers(bridge: any, selectedPreset: number =
     // Reset previous texts when creating new containers
     resetPreviousTexts();
     
-    console.log('Creating containers with:', {
+    console.log('[Boot] 📺 Creazione contenitore display...');
+    console.log('[Boot] Container details:', {
       totalNum: container.containerTotalNum,
       container: {
         id: textContainer.containerID,
         name: textContainer.containerName,
-        content: textContainer.content.substring(0, 50) + '...',
+        content: textContainer.content.substring(0, 80) + '...',
         pos: `(${textContainer.xPosition}, ${textContainer.yPosition})`,
         size: `${textContainer.width}x${textContainer.height}`
       }
     });
     
-    console.log('[Boot] 📺 Creazione contenitore display...');
     const result = await bridge.createStartUpPageContainer(container);
     console.log('[Boot] 📊 CreateStartUpPageContainer result:', result);
     console.log('[Boot] 📊 StartUpPageCreateResult.success:', StartUpPageCreateResult.success);
     console.log('[Boot] 📊 Result type:', typeof result);
-    console.log('[Boot] 📊 Result === 0:', result === 0);
-    console.log('[Boot] 📊 Result === 1:', result === 1);
-    console.log('[Boot] 📊 Result === StartUpPageCreateResult.success:', result === StartUpPageCreateResult.success);
     
     // On real hardware, sometimes we need to wait a bit for containers to be ready
     // The result might be successful but containers need time to initialize
@@ -321,6 +339,8 @@ export async function createPageContainers(bridge: any, selectedPreset: number =
     
     if (isSuccess) {
       console.log('[Display] ✅ Contenitore display creato con successo');
+      // Reset current screen state since we just created it
+      currentScreenState = TimerState.IDLE;
     } else {
       console.error('[Display] ❌ Errore creazione contenitore:', result);
       console.log('[Display] 🔄 Tentativo di aggiornare contenitore esistente...');
