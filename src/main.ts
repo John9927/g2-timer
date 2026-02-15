@@ -134,16 +134,19 @@ async function init() {
     debugLogToDisplay('Container creati OK');
 
     // Initial render - show preset selection
-    if (timerState && bridge) {
-      debugLogToDisplay('Primo render...');
-      await renderUI(
-        bridge,
-        timerState.getState(),
-        timerState.getSelectedPreset(),
-        timerState.getRemainingSeconds(),
-        timerState.getBlinkVisibility()
-      );
-    }
+    // Add small delay to ensure container is ready
+    setTimeout(async () => {
+      if (timerState && bridge) {
+        debugLogToDisplay('Primo render...');
+        await renderUI(
+          bridge,
+          timerState.getState(),
+          timerState.getSelectedPreset(),
+          timerState.getRemainingSeconds(),
+          timerState.getBlinkVisibility()
+        );
+      }
+    }, 200);
 
     // Set up event handlers
     setupEventHandlers();

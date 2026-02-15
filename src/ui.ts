@@ -96,7 +96,9 @@ async function renderPresetSelection(
       textObject: [textContainer],
     };
 
-    await bridge.rebuildPageContainer(container);
+    console.log('[UI] Rendering preset selection screen...');
+    const result = await bridge.rebuildPageContainer(container);
+    console.log('[UI] rebuildPageContainer result:', result);
   } catch (error) {
     console.error('Error rendering preset selection:', error);
   }
@@ -147,11 +149,16 @@ async function renderTimerScreen(
       textObject: [textContainer],
     };
 
-    await bridge.rebuildPageContainer(container);
+    console.log('[UI] Rendering timer screen...');
+    const result = await bridge.rebuildPageContainer(container);
+    console.log('[UI] rebuildPageContainer result:', result);
   } catch (error) {
     console.error('Error rendering timer screen:', error);
   }
 }
+
+// Track current screen state to know when to rebuild
+let currentScreenState: TimerState | null = null;
 
 // Render all UI elements - switches between preset selection and timer screen
 export async function renderUI(
@@ -188,12 +195,63 @@ export async function renderUI(
       return;
     }
 
+    // Check if we need to rebuild (state changed from IDLE to RUNNING/PAUSED or vice versa)
+    const needsRebuild = currentScreenState === null || 
+                        (currentScreenState === TimerState.IDLE && state !== TimerState.IDLE) ||
+                        (currentScreenState !== TimerState.IDLE && state === TimerState.IDLE);
+
+    console.log('[UI] renderUI called:', { state, needsRebuild, currentScreenState });
+
     // Show preset selection when IDLE
     if (state === TimerState.IDLE) {
-      await renderPresetSelection(bridge, selectedPreset);
+      if (needsRebuild) {
+        await renderPresetSelection(bridge, selectedPreset);
+        currentScreenState = state;
+      } else {
+        // Just update content if already showing preset selection
+        const presetLines = PRESETS.map((preset) => {
+          if (preset === selectedPreset) {
+            return `  > ${preset} min  <`;
+          }
+          return `    ${preset} min`;
+        }).join('\n');
+        const content = `Scegli i minuti\n\n${presetLines}\n\nSwipe per cambiare\nTocca per avviare`;
+        const metrics = getTextMetrics(content);
+        bridge.textContainerUpgrade({
+          containerID: 1,
+          containerName: "preset-selection",
+          content: content,
+          contentLength: metrics.contentLength,
+          contentOffset: metrics.contentOffset,
+        });
+      }
     } else {
       // Show timer screen when RUNNING, PAUSED, or DONE
-      await renderTimerScreen(bridge, state, remainingSeconds, isBlinkingVisible);
+      if (needsRebuild) {
+        await renderTimerScreen(bridge, state, remainingSeconds, isBlinkingVisible);
+        currentScreenState = state;
+      } else {
+        // Just update time if already showing timer screen
+        const timeText = formatTime(remainingSeconds);
+        const paddingTop = '\n\n\n\n\n\n';
+        const paddingBottom = '\n\n\n\n\n\n';
+        let content = `${paddingTop}${timeText}${paddingBottom}`;
+        
+        if (state === TimerState.PAUSED) {
+          content = `${paddingTop}${timeText}\n\nPAUSED${paddingBottom}`;
+        } else if (state === TimerState.DONE && isBlinkingVisible) {
+          content = `${paddingTop}${timeText}\n\nCOMPLETATO${paddingBottom}`;
+        }
+        
+        const metrics = getTextMetrics(content);
+        bridge.textContainerUpgrade({
+          containerID: 1,
+          containerName: "timer-display",
+          content: content,
+          contentLength: metrics.contentLength,
+          contentOffset: metrics.contentOffset,
+        });
+      }
     }
   } catch (error) {
     console.error('Error rendering UI:', error);
