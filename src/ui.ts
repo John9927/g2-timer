@@ -73,38 +73,52 @@ function buildPresetContent(selectedPreset: number): string {
 // genuinely large digits is to render them as a bitmap and push it via an
 // image container (max 200 × 100 px per the SDK docs).
 function renderTimerToBase64(seconds: number, status?: string): string {
-  const W = 200;
-  const H = 100;
-  const canvas = document.createElement('canvas');
-  canvas.width = W;
-  canvas.height = H;
-  const ctx = canvas.getContext('2d')!;
+  try {
+    const W = 200;
+    const H = 100;
+    const canvas = document.createElement('canvas');
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext('2d');
+    
+    if (!ctx) {
+      console.error('[Canvas] Failed to get 2d context');
+      return '';
+    }
 
-  // Black background – on the G2, black = transparent (no light)
-  ctx.fillStyle = '#000000';
-  ctx.fillRect(0, 0, W, H);
+    // Black background – on the G2, black = transparent (no light)
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, W, H);
 
-  // White digits – on the G2, white = green LED light
-  ctx.fillStyle = '#FFFFFF';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
+    // White digits – on the G2, white = green LED light
+    ctx.fillStyle = '#FFFFFF';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
 
-  const time = formatTime(seconds); // "MM:SS"
+    const time = formatTime(seconds); // "MM:SS"
+    console.log('[Canvas] Rendering time:', time, 'status:', status);
 
-  if (status) {
-    // Timer + small status below
-    ctx.font = 'bold 60px monospace';
-    ctx.fillText(time, W / 2, 38);
-    ctx.font = 'bold 18px monospace';
-    ctx.fillText(status, W / 2, 80);
-  } else {
-    // Timer only – as large as possible
-    ctx.font = 'bold 72px monospace';
-    ctx.fillText(time, W / 2, H / 2 + 2);
+    if (status) {
+      // Timer + small status below
+      ctx.font = 'bold 60px monospace';
+      ctx.fillText(time, W / 2, 38);
+      ctx.font = 'bold 18px monospace';
+      ctx.fillText(status, W / 2, 80);
+    } else {
+      // Timer only – as large as possible
+      ctx.font = 'bold 72px monospace';
+      ctx.fillText(time, W / 2, H / 2 + 2);
+    }
+
+    // Return the full data URL (SDK should handle it)
+    const dataURL = canvas.toDataURL('image/png');
+    console.log('[Canvas] Generated image, length:', dataURL.length);
+    // Return full data URL - SDK accepts base64 strings
+    return dataURL;
+  } catch (error) {
+    console.error('[Canvas] Error rendering timer image:', error);
+    return '';
   }
-
-  // Return just the base64 payload (strip the "data:image/png;base64," prefix)
-  return canvas.toDataURL('image/png').split(',')[1];
 }
 
 // ── Preset selection screen (text-only) ────────────────────────────────
@@ -218,21 +232,52 @@ async function renderTimerScreen(
     };
 
     console.log('[UI] Rebuilding to timer screen (image mode)');
-    await bridge.rebuildPageContainer({
+    const rebuildResult = await bridge.rebuildPageContainer({
       containerTotalNum: 2,
       textObject: [textContainer],
       imageObject: [imageContainer],
     });
+    console.log('[UI] Rebuild result:', rebuildResult);
     currentScreenType = 'timer';
 
+    // Small delay to ensure container is ready (hardware sometimes needs this)
+    await new Promise(resolve => setTimeout(resolve, 100));
+
     // Now push the actual image data (must come AFTER container creation)
-    const base64 = renderTimerToBase64(remainingSeconds, statusForImage || undefined);
-    await bridge.updateImageRawData({
-      containerID: 2,
-      containerName: 'timer-img',
-      imageData: base64,
-    });
-    console.log('[UI] Timer image sent');
+    const dataURL = renderTimerToBase64(remainingSeconds, statusForImage || undefined);
+    if (!dataURL) {
+      console.error('[UI] Failed to generate timer image');
+      return;
+    }
+    
+    // Try converting to Uint8Array as well (SDK accepts both)
+    let imageData: string | Uint8Array = dataURL;
+    try {
+      // Extract base64 payload and convert to bytes
+      const base64Payload = dataURL.includes(',') ? dataURL.split(',')[1] : dataURL;
+      const binaryString = atob(base64Payload);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      imageData = bytes;
+      console.log('[UI] Converted to Uint8Array, length:', bytes.length);
+    } catch (convError) {
+      console.warn('[UI] Could not convert to bytes, using base64 string:', convError);
+      // Use base64 string as fallback
+    }
+    
+    console.log('[UI] Sending image data, type:', typeof imageData, 'length:', imageData.length || (imageData as string).length);
+    try {
+      const imageResult = await bridge.updateImageRawData({
+        containerID: 2,
+        containerName: 'timer-img',
+        imageData: imageData,
+      });
+      console.log('[UI] Image update result:', imageResult);
+    } catch (imgError) {
+      console.error('[UI] Error sending image:', imgError);
+    }
   } catch (error) {
     console.error('Error rendering timer screen:', error);
   }
@@ -273,12 +318,36 @@ async function updateTimerScreen(
     });
 
     // Update the timer image
-    const base64 = renderTimerToBase64(remainingSeconds, statusForImage || undefined);
-    await bridge.updateImageRawData({
-      containerID: 2,
-      containerName: 'timer-img',
-      imageData: base64,
-    });
+    const dataURL = renderTimerToBase64(remainingSeconds, statusForImage || undefined);
+    if (!dataURL) {
+      console.error('[UI] Failed to generate timer image in update');
+      return;
+    }
+    
+    // Convert to Uint8Array (SDK accepts both)
+    let imageData: string | Uint8Array = dataURL;
+    try {
+      const base64Payload = dataURL.includes(',') ? dataURL.split(',')[1] : dataURL;
+      const binaryString = atob(base64Payload);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      imageData = bytes;
+    } catch (convError) {
+      // Use base64 string as fallback
+    }
+    
+    try {
+      const imageResult = await bridge.updateImageRawData({
+        containerID: 2,
+        containerName: 'timer-img',
+        imageData: imageData,
+      });
+      console.log('[UI] Image update result (periodic):', imageResult);
+    } catch (imgError) {
+      console.error('[UI] Error updating image:', imgError);
+    }
   } catch (error) {
     console.error('Error updating timer screen:', error);
   } finally {
