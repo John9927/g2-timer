@@ -61,11 +61,11 @@ export function resetPreviousTexts(): void {
 // Track current screen type
 let currentScreenType: 'preset' | 'timer' | null = null;
 
-// Render preset selection screen (IDLE state)
-async function renderPresetSelection(
+// Render preset selection screen (IDLE state) - using textContainerUpgrade
+function renderPresetSelection(
   bridge: any,
   selectedPreset: number
-): Promise<void> {
+): void {
   if (!bridge) return;
 
   try {
@@ -79,28 +79,17 @@ async function renderPresetSelection(
     }).join('\n');
 
     const content = `Scegli i minuti\n\n${presetLines}\n\nSwipe per cambiare\nTocca per avviare`;
+    const metrics = getTextMetrics(content);
 
-    const textContainer: any = {
-      xPosition: 0,
-      yPosition: 0,
-      width: 576,
-      height: 288,
-      borderWidth: 0,
-      borderColor: 0,
-      paddingLength: 20,
+    console.log('[UI] Updating preset selection');
+    
+    bridge.textContainerUpgrade({
       containerID: 1,
-      containerName: "preset-selection",
+      containerName: "timer-main",
       content: content,
-      isEventCapture: 1,
-    };
-
-    const container: any = {
-      containerTotalNum: 1,
-      textObject: [textContainer],
-    };
-
-    console.log('[UI] Rebuilding to preset selection screen');
-    await bridge.rebuildPageContainer(container);
+      contentLength: metrics.contentLength,
+      contentOffset: metrics.contentOffset,
+    });
     currentScreenType = 'preset';
   } catch (error) {
     console.error('Error rendering preset selection:', error);
@@ -108,6 +97,7 @@ async function renderPresetSelection(
 }
 
 // Render timer screen (RUNNING/PAUSED/DONE state) - FULL SCREEN LARGE
+// Use rebuildPageContainer only when switching from preset to timer
 async function renderTimerScreen(
   bridge: any,
   state: TimerState,
@@ -120,20 +110,12 @@ async function renderTimerScreen(
     const timeText = formatTime(remainingSeconds);
     
     // Create a FULL SCREEN timer with maximum spacing
-    // Use many newlines to center vertically and make it appear larger
-    // The font is fixed size, but we can use spacing to make it feel bigger
     const verticalPadding = '\n\n\n\n\n\n\n\n\n\n'; // 10 newlines top
     const verticalPaddingBottom = '\n\n\n\n\n\n\n\n\n\n'; // 10 newlines bottom
-    
-    // Center horizontally by adding spaces (approximate centering)
-    // Timer format is MM:SS (5 chars), screen is ~576px wide
-    // With padding 20, we have ~536px for text
-    // Try to center by adding spaces before
     const horizontalPadding = '                    '; // ~20 spaces
     
     let content = `${verticalPadding}${horizontalPadding}${timeText}${verticalPaddingBottom}`;
     
-    // Add status if paused
     if (state === TimerState.PAUSED) {
       content = `${verticalPadding}${horizontalPadding}${timeText}\n\n${horizontalPadding}PAUSED${verticalPaddingBottom}`;
     } else if (state === TimerState.DONE && isBlinkingVisible) {
@@ -149,7 +131,7 @@ async function renderTimerScreen(
       borderColor: 0,
       paddingLength: 0, // No padding to maximize space
       containerID: 1,
-      containerName: "timer-display",
+      containerName: "timer-main",
       content: content,
       isEventCapture: 1,
     };
@@ -195,7 +177,7 @@ function updateTimerScreen(
     
     bridge.textContainerUpgrade({
       containerID: 1,
-      containerName: "timer-display",
+      containerName: "timer-main",
       content: content,
       contentLength: metrics.contentLength,
       contentOffset: metrics.contentOffset,
@@ -222,7 +204,7 @@ export async function renderUI(
       const metrics = getTextMetrics(debugMessage);
       bridge.textContainerUpgrade({
         containerID: 1,
-        containerName: currentScreenType === 'timer' ? "timer-display" : "preset-selection",
+        containerName: "timer-main",
         content: debugMessage,
         contentLength: metrics.contentLength,
         contentOffset: metrics.contentOffset,
@@ -246,7 +228,7 @@ export async function renderUI(
         const metrics = getTextMetrics(content);
         bridge.textContainerUpgrade({
           containerID: 1,
-          containerName: "preset-selection",
+          containerName: "timer-main",
           content: content,
           contentLength: metrics.contentLength,
           contentOffset: metrics.contentOffset,
@@ -291,7 +273,7 @@ export async function createPageContainers(bridge: any, selectedPreset: number =
       borderColor: 0,
       paddingLength: 20,
       containerID: 1,
-      containerName: "preset-selection",
+      containerName: "timer-main",
       content: content,
       isEventCapture: 1,
     };
@@ -305,6 +287,7 @@ export async function createPageContainers(bridge: any, selectedPreset: number =
     resetPreviousTexts();
     
     console.log('[Boot] 📺 Creazione contenitore display...');
+    console.log('[Boot] Content:', content.substring(0, 100));
     const result = await bridge.createStartUpPageContainer(container);
     console.log('[Boot] 📊 CreateStartUpPageContainer result:', result);
     
