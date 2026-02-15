@@ -178,8 +178,8 @@ export async function createPageContainers(bridge: any): Promise<boolean> {
 
     const result = await bridge.createStartUpPageContainer(container);
     console.log('CreateStartUpPageContainer result:', result);
-    // StartUpPageCreateResult.success is typically 0
-    return result === StartUpPageCreateResult.success || result === 0 || result === 'success';
+    // StartUpPageCreateResult.success can be 0 or 1 depending on SDK version
+    return result === StartUpPageCreateResult.success || result === 0 || result === 1 || result === 'success';
   } catch (error) {
     console.error('Error creating page containers:', error);
     return false;
