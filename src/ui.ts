@@ -12,8 +12,8 @@ const DISPLAY_WIDTH = 576;
 const DISPLAY_HEIGHT = 288;
 
 const TEXT_CONTAINER_ID = 1;
-const MP_CONTAINER_ID = 2; // "M:" block (minute tens + colon)
-const MSS_CONTAINER_ID = 3; // "MSS" block (minute ones + seconds)
+const MP_CONTAINER_ID = 2; // "M" block (minute tens)
+const MSS_CONTAINER_ID = 3; // "M:SS" block (minute ones + colon + seconds)
 
 const TEXT_CONTAINER_NAME = 'timer-text';
 const MP_CONTAINER_NAME = 'timer-mp';
@@ -22,12 +22,22 @@ const MSS_CONTAINER_NAME = 'timer-mss';
 const DIGIT_SCALE = 10;
 const DIGIT_BASE_WIDTH = 5;
 const DIGIT_BASE_HEIGHT = 7;
-const GAP_BASE = 1;
 const COLON_BASE_WIDTH = 3;
 
 const DIGIT_HEIGHT = DIGIT_BASE_HEIGHT * DIGIT_SCALE;
-const MP_WIDTH = (DIGIT_BASE_WIDTH + GAP_BASE + COLON_BASE_WIDTH) * DIGIT_SCALE; // "M:"
-const MSS_WIDTH = (DIGIT_BASE_WIDTH + GAP_BASE + DIGIT_BASE_WIDTH + GAP_BASE + DIGIT_BASE_WIDTH) * DIGIT_SCALE; // "MSS"
+const MP_WIDTH = DIGIT_BASE_WIDTH * DIGIT_SCALE; // "M"
+const MINUTE_COLON_GAP = 0;
+const COLON_SECOND_GAP = 1;
+const SECOND_DIGIT_GAP = 1;
+const MSS_WIDTH =
+  (DIGIT_BASE_WIDTH +
+    MINUTE_COLON_GAP +
+    COLON_BASE_WIDTH +
+    COLON_SECOND_GAP +
+    DIGIT_BASE_WIDTH +
+    SECOND_DIGIT_GAP +
+    DIGIT_BASE_WIDTH) *
+  DIGIT_SCALE; // "M:SS" (max 200)
 
 const TIMER_GROUP_GAP = 12;
 const TOTAL_TIMER_WIDTH = MP_WIDTH + TIMER_GROUP_GAP + MSS_WIDTH;
@@ -288,11 +298,8 @@ async function getMinutePrefixPngBytes(minuteTens: string): Promise<number[]> {
     return [];
   }
 
-  const colonX = (DIGIT_BASE_WIDTH + GAP_BASE) * DIGIT_SCALE;
-
   const bytes = await renderPng(MP_WIDTH, DIGIT_HEIGHT, (drawCtx) => {
     drawPattern(drawCtx, tens, 0, 0, DIGIT_SCALE);
-    drawPattern(drawCtx, COLON_PATTERN, colonX, 0, DIGIT_SCALE);
   });
 
   if (bytes.length > 0) {
@@ -314,11 +321,20 @@ async function getMinuteSuffixPngBytes(minuteOnes: string, seconds: string): Pro
     return [];
   }
 
-  const tensX = (DIGIT_BASE_WIDTH + GAP_BASE) * DIGIT_SCALE;
-  const onesX = (DIGIT_BASE_WIDTH + GAP_BASE + DIGIT_BASE_WIDTH + GAP_BASE) * DIGIT_SCALE;
+  const colonX = (DIGIT_BASE_WIDTH + MINUTE_COLON_GAP) * DIGIT_SCALE;
+  const tensX = (DIGIT_BASE_WIDTH + MINUTE_COLON_GAP + COLON_BASE_WIDTH + COLON_SECOND_GAP) * DIGIT_SCALE;
+  const onesX =
+    (DIGIT_BASE_WIDTH +
+      MINUTE_COLON_GAP +
+      COLON_BASE_WIDTH +
+      COLON_SECOND_GAP +
+      DIGIT_BASE_WIDTH +
+      SECOND_DIGIT_GAP) *
+    DIGIT_SCALE;
 
   const bytes = await renderPng(MSS_WIDTH, DIGIT_HEIGHT, (drawCtx) => {
     drawPattern(drawCtx, minuteOnesPattern, 0, 0, DIGIT_SCALE);
+    drawPattern(drawCtx, COLON_PATTERN, colonX, 0, DIGIT_SCALE);
     drawPattern(drawCtx, tens, tensX, 0, DIGIT_SCALE);
     drawPattern(drawCtx, ones, onesX, 0, DIGIT_SCALE);
   });
