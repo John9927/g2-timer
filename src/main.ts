@@ -234,6 +234,13 @@ async function init() {
     }
 
     setupEventHandlers();
+    await renderUI(
+      bridge,
+      TimerState.IDLE,
+      timerState.getSelectedPreset(),
+      timerState.getRemainingSeconds(),
+      timerState.getBlinkVisibility()
+    );
     isInitialized = true;
     updateRemoteView();
   } catch (error) {

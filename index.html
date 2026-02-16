@@ -7,27 +7,25 @@
     <title>G2 Timer – Remote control</title>
     <style>
       :root {
-        --bg: #0a0e14;
-        --panel: #131920;
-        --border: #2a3544;
-        --text: #e6e6e6;
-        --muted: #8b949e;
-        --accent: #58a6ff;
-        --accent-hover: #79b8ff;
-        --go: #3fb950;
-        --go-hover: #56d364;
-        --pause: #d29922;
-        --pause-hover: #e3b341;
-        --danger: #f85149;
-        --danger-hover: #ff7b72;
+        --bg: #ffffff;
+        --bg-subtle: #f8f9fa;
+        --card: #ffffff;
+        --border: #e5e7eb;
+        --text: #1a1a1a;
+        --text-muted: #6b7280;
+        --accent: #1a1a1a;
+        --accent-inverse: #ffffff;
+        --success: #22c55e;
+        --danger: #ef4444;
+        --shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
       }
       * {
         box-sizing: border-box;
       }
       body {
         margin: 0;
-        padding: 16px;
-        font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+        padding: 20px;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
         background: var(--bg);
         color: var(--text);
         display: flex;
@@ -36,32 +34,40 @@
         min-height: 100vh;
         -webkit-tap-highlight-color: transparent;
       }
-      h1 {
-        font-size: 1.1rem;
+      .header {
+        width: 100%;
+        max-width: 360px;
+        margin-bottom: 20px;
+      }
+      .header h1 {
+        font-size: 1.25rem;
         font-weight: 600;
-        color: var(--muted);
-        margin: 0 0 12px 0;
+        color: var(--text);
+        margin: 0;
+        letter-spacing: -0.02em;
       }
       #remote-container {
         width: 100%;
         max-width: 360px;
-        background: var(--panel);
-        border: 1px solid var(--border);
-        border-radius: 16px;
-        padding: 20px;
         display: flex;
         flex-direction: column;
-        gap: 20px;
+        gap: 16px;
       }
-      /* Preset */
-      #remote-preset-section {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
+      .card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 16px;
+        box-shadow: var(--shadow);
       }
       #remote-preset-section label {
-        font-size: 0.85rem;
-        color: var(--muted);
+        display: block;
+        font-size: 0.8rem;
+        font-weight: 500;
+        color: var(--text-muted);
+        margin-bottom: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
       }
       #remote-preset-buttons {
         display: flex;
@@ -70,41 +76,35 @@
       }
       .preset-btn {
         flex: 1 1 calc(25% - 6px);
-        min-width: 60px;
+        min-width: 52px;
         padding: 12px 8px;
-        font-size: 1rem;
+        font-size: 0.95rem;
         font-weight: 600;
         border: 1px solid var(--border);
         border-radius: 10px;
-        background: var(--panel);
+        background: var(--card);
         color: var(--text);
         cursor: pointer;
         transition: background 0.15s, border-color 0.15s, color 0.15s;
       }
-      .preset-btn:hover, .preset-btn:active {
-        background: var(--border);
-        border-color: var(--accent);
-        color: var(--accent);
+      .preset-btn:hover:not(:disabled), .preset-btn:active:not(:disabled) {
+        background: var(--bg-subtle);
+        border-color: var(--text-muted);
       }
       .preset-btn.selected {
         background: var(--accent);
         border-color: var(--accent);
-        color: var(--bg);
+        color: var(--accent-inverse);
       }
-      .preset-btn.selected:hover, .preset-btn.selected:active {
-        background: var(--accent-hover);
-        border-color: var(--accent-hover);
-        color: var(--bg);
+      .preset-btn.selected:hover:not(:disabled), .preset-btn.selected:active:not(:disabled) {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: var(--accent-inverse);
+        opacity: 0.9;
       }
       .preset-btn:disabled {
-        opacity: 0.6;
+        opacity: 0.5;
         cursor: not-allowed;
-      }
-      /* Main actions */
-      #remote-actions {
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
       }
       .action-row {
         display: flex;
@@ -112,15 +112,14 @@
       }
       .action-row button {
         flex: 1;
-        padding: 16px;
-        font-size: 1rem;
+        padding: 14px 16px;
+        font-size: 0.95rem;
         font-weight: 600;
-        border: none;
-        border-radius: 12px;
+        border-radius: 10px;
         cursor: pointer;
-        transition: filter 0.15s, transform 0.05s;
+        transition: opacity 0.15s, transform 0.05s;
       }
-      .action-row button:active {
+      .action-row button:active:not(:disabled) {
         transform: scale(0.98);
       }
       .action-row button:disabled {
@@ -129,38 +128,52 @@
         transform: none;
       }
       #btn-start-pause {
-        background: var(--go);
-        color: #fff;
+        background: var(--accent);
+        color: var(--accent-inverse);
+        border: 1px solid var(--accent);
       }
       #btn-start-pause:hover:not(:disabled) {
-        filter: brightness(1.1);
+        opacity: 0.9;
       }
       #btn-start-pause.pause-mode {
-        background: var(--pause);
-        color: #000;
+        background: var(--card);
+        color: var(--text);
+        border: 1px solid var(--border);
+      }
+      #btn-start-pause.pause-mode:hover:not(:disabled) {
+        background: var(--bg-subtle);
       }
       #btn-reset {
-        background: var(--danger);
-        color: #fff;
+        background: var(--card);
+        color: var(--text);
+        border: 1px solid var(--border);
       }
       #btn-reset:hover:not(:disabled) {
-        filter: brightness(1.1);
+        background: var(--bg-subtle);
+        border-color: var(--text-muted);
       }
       #remote-status {
         font-size: 0.75rem;
-        color: var(--muted);
+        color: var(--text-muted);
         text-align: center;
-        padding-top: 8px;
+        padding-top: 12px;
+        margin-top: 4px;
         border-top: 1px solid var(--border);
       }
-      #remote-status.connected { color: var(--go); }
-      #remote-status.error { color: var(--danger); }
+      #remote-status.connected {
+        color: var(--success);
+      }
+      #remote-status.error {
+        color: var(--danger);
+      }
     </style>
   </head>
   <body>
-    <h1>G2 Timer – Remote control</h1>
+    <div class="header">
+      <h1>G2 Timer</h1>
+    </div>
     <div id="remote-container">
-      <div id="remote-preset-section">
+      <div class="card" id="remote-preset-section">
         <label>Duration (minutes)</label>
         <div id="remote-preset-buttons">
           <button type="button" class="preset-btn" data-preset="1">1</button>
@@ -172,7 +185,7 @@
           <button type="button" class="preset-btn" data-preset="60">60</button>
         </div>
       </div>
-      <div id="remote-actions">
+      <div class="card" id="remote-actions">
         <div class="action-row">
           <button type="button" id="btn-start-pause" disabled>Start</button>
           <button type="button" id="btn-reset" disabled>Cancel / Reset</button>

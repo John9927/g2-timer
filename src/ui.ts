@@ -14,10 +14,17 @@ const DISPLAY_HEIGHT = 288;
 const TEXT_CONTAINER_ID = 1;
 const MP_CONTAINER_ID = 2; // "M" block (minute tens)
 const MSS_CONTAINER_ID = 3; // "M:SS" block (minute ones + colon + seconds)
+const PRESET_CONTAINER_ID = 4;
 
 const TEXT_CONTAINER_NAME = 'timer-text';
 const MP_CONTAINER_NAME = 'timer-mp';
 const MSS_CONTAINER_NAME = 'timer-mss';
+const PRESET_CONTAINER_NAME = 'preset-display';
+
+const PRESET_COLOR_BG = '#000000';
+const PRESET_COLOR_TEXT = '#00ff88';
+const PRESET_COLOR_ACCENT = '#00cc6a';
+const PRESET_COLOR_SELECTED_BG = 'rgba(0, 255, 136, 0.15)';
 
 const DIGIT_SCALE = 10;
 const DIGIT_BASE_WIDTH = 5;
@@ -164,6 +171,7 @@ const imageCache = new Map<string, number[]>();
 
 let canvas: HTMLCanvasElement | null = null;
 let ctx: CanvasRenderingContext2D | null = null;
+let cropCanvas: HTMLCanvasElement | null = null;
 
 function getContext(): CanvasRenderingContext2D | null {
   if (!canvas) {
@@ -171,6 +179,15 @@ function getContext(): CanvasRenderingContext2D | null {
     ctx = canvas.getContext('2d');
   }
   return ctx;
+}
+
+function getCropCanvas(width: number, height: number): HTMLCanvasElement {
+  if (!cropCanvas || cropCanvas.width !== width || cropCanvas.height !== height) {
+    cropCanvas = document.createElement('canvas');
+    cropCanvas.width = width;
+    cropCanvas.height = height;
+  }
+  return cropCanvas;
 }
 
 function delay(ms: number): Promise<void> {
@@ -231,6 +248,158 @@ function buildPresetContent(selectedPreset: number): string {
     'Swipe: change',
     'Tap: start',
   ].join('\n');
+}
+
+function drawPresetScreen(drawCtx: CanvasRenderingContext2D, selectedPreset: number): void {
+  const w = DISPLAY_WIDTH;
+  const h = DISPLAY_HEIGHT;
+  const padding = 24;
+  const titleFont = 'bold 22px monospace';
+  const labelFont = '14px monospace';
+  const presetFont = 'bold 18px monospace';
+  const hintFont = '12px monospace';
+
+  drawCtx.fillStyle = PRESET_COLOR_BG;
+  drawCtx.fillRect(0, 0, w, h);
+
+  drawCtx.fillStyle = PRESET_COLOR_TEXT;
+  drawCtx.font = titleFont;
+  drawCtx.textAlign = 'center';
+  drawCtx.fillText('G2 Timer', w / 2, 42);
+
+  const minutesStr = String(Math.min(99, Math.max(0, selectedPreset))).padStart(2, '0');
+  drawCtx.font = labelFont;
+  drawCtx.fillStyle = PRESET_COLOR_ACCENT;
+  drawCtx.fillText(`Minutes: ${minutesStr}`, w / 2, 72);
+
+  const row1 = [1, 3, 5, 10];
+  const row2 = [15, 30, 60];
+  const cellW = 72;
+  const cellH = 36;
+  const gap = 12;
+  const startY = 100;
+
+  const drawRow = (presets: number[], rowIndex: number) => {
+    const totalWidth = presets.length * cellW + (presets.length - 1) * gap;
+    let x = (w - totalWidth) / 2 + cellW / 2 + gap / 2;
+    const y = startY + rowIndex * (cellH + gap) + cellH / 2 + 8;
+    drawCtx.font = presetFont;
+    drawCtx.textAlign = 'center';
+    drawCtx.textBaseline = 'middle';
+    for (const p of presets) {
+      const isSelected = p === selectedPreset;
+      const cellX = x - cellW / 2 - gap / 2;
+      const cellY = y - cellH / 2 - 8;
+      if (isSelected) {
+        const bw = cellW + gap;
+        const bh = cellH;
+        drawCtx.fillStyle = PRESET_COLOR_SELECTED_BG;
+        const r = 8;
+        if (typeof drawCtx.roundRect === 'function') {
+          drawCtx.beginPath();
+          drawCtx.roundRect(cellX, cellY, bw, bh, r);
+          drawCtx.fill();
+          drawCtx.strokeStyle = PRESET_COLOR_ACCENT;
+          drawCtx.lineWidth = 2;
+          drawCtx.stroke();
+        } else {
+          drawCtx.fillRect(cellX, cellY, bw, bh);
+          drawCtx.strokeStyle = PRESET_COLOR_ACCENT;
+          drawCtx.lineWidth = 2;
+          drawCtx.strokeRect(cellX, cellY, bw, bh);
+        }
+      }
+      drawCtx.fillStyle = isSelected ? PRESET_COLOR_TEXT : PRESET_COLOR_ACCENT;
+      drawCtx.fillText(String(p), x, y);
+      x += cellW + gap;
+    }
+  };
+  drawRow(row1, 0);
+  drawRow(row2, 1);
+
+  drawCtx.textBaseline = 'alphabetic';
+  drawCtx.font = hintFont;
+  drawCtx.fillStyle = PRESET_COLOR_ACCENT;
+  drawCtx.textAlign = 'center';
+  drawCtx.globalAlpha = 0.85;
+  drawCtx.fillText('Swipe: change duration', w / 2, h - 44);
+  drawCtx.fillText('Tap: start timer', w / 2, h - 24);
+  drawCtx.globalAlpha = 1;
+}
+
+function renderPresetToCanvas(selectedPreset: number): void {
+  const drawCtx = getContext();
+  if (!drawCtx || !canvas) return;
+  canvas.width = DISPLAY_WIDTH;
+  canvas.height = DISPLAY_HEIGHT;
+  drawCtx.fillStyle = PRESET_COLOR_BG;
+  drawCtx.fillRect(0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT);
+  drawPresetScreen(drawCtx, selectedPreset);
+}
+
+async function getPresetImageBytes(selectedPreset: number): Promise<number[]> {
+  const cacheKey = `preset:${selectedPreset}`;
+  if (imageCache.has(cacheKey)) {
+    return imageCache.get(cacheKey)!;
+  }
+  const bytes = await renderPng(DISPLAY_WIDTH, DISPLAY_HEIGHT, (drawCtx) =>
+    drawPresetScreen(drawCtx, selectedPreset)
+  );
+  if (bytes.length > 0) {
+    imageCache.set(cacheKey, bytes);
+  }
+  return bytes;
+}
+
+/** Crop of the preset image for the digit area so it blends in (no black rectangle). */
+async function getPresetDigitAreaBytes(
+  selectedPreset: number,
+  x: number,
+  y: number,
+  w: number,
+  h: number
+): Promise<number[]> {
+  const cacheKey = `preset-crop:${selectedPreset}:${x}:${y}:${w}:${h}`;
+  if (imageCache.has(cacheKey)) {
+    return imageCache.get(cacheKey)!;
+  }
+  renderPresetToCanvas(selectedPreset);
+  const drawCtx = getContext();
+  if (!drawCtx || !canvas) return [];
+  const imageData = drawCtx.getImageData(x, y, w, h);
+  const crop = getCropCanvas(w, h);
+  const cropCtx = crop.getContext('2d');
+  if (!cropCtx) return [];
+  cropCtx.putImageData(imageData, 0, 0);
+  try {
+    const blob: Blob = await new Promise((resolve, reject) => {
+      crop.toBlob((result) => {
+        if (!result) {
+          reject(new Error('toBlob failed'));
+          return;
+        }
+        resolve(result);
+      }, 'image/png');
+    });
+    const buffer = await blob.arrayBuffer();
+    const bytes = Array.from(new Uint8Array(buffer));
+    if (bytes.length > 0) {
+      imageCache.set(cacheKey, bytes);
+    }
+    return bytes;
+  } catch (error) {
+    console.error('[UI] Preset crop PNG failed:', error);
+    return [];
+  }
+}
+
+async function getBlankPresetPngBytes(): Promise<number[]> {
+  return getBlankPngBytes('blank-preset', DISPLAY_WIDTH, DISPLAY_HEIGHT);
+}
+
+async function clearPresetImage(bridge: any): Promise<void> {
+  const blank = await getBlankPresetPngBytes();
+  await pushImage(bridge, PRESET_CONTAINER_ID, PRESET_CONTAINER_NAME, blank);
 }
 
 function buildTimerOverlayText(state: TimerState, isBlinkingVisible: boolean): string {
@@ -363,6 +532,41 @@ async function getBlankPngBytes(cacheKey: string, width: number, height: number)
     imageCache.set(cacheKey, bytes);
   }
   return bytes;
+}
+
+/** Returns a fully transparent PNG so the preset container doesn't cover the timer. */
+async function getTransparentPngBytes(width: number, height: number): Promise<number[]> {
+  const cacheKey = `transparent:${width}x${height}`;
+  if (imageCache.has(cacheKey)) {
+    return imageCache.get(cacheKey)!;
+  }
+  const drawCtx = getContext();
+  if (!drawCtx || !canvas) {
+    return [];
+  }
+  canvas.width = width;
+  canvas.height = height;
+  drawCtx.clearRect(0, 0, width, height);
+  try {
+    const blob: Blob = await new Promise((resolve, reject) => {
+      canvas!.toBlob((result) => {
+        if (!result) {
+          reject(new Error('toBlob failed'));
+          return;
+        }
+        resolve(result);
+      }, 'image/png');
+    });
+    const buffer = await blob.arrayBuffer();
+    const bytes = Array.from(new Uint8Array(buffer));
+    if (bytes.length > 0) {
+      imageCache.set(cacheKey, bytes);
+    }
+    return bytes;
+  } catch (error) {
+    console.error('[UI] Transparent PNG failed:', error);
+    return [];
+  }
 }
 
 async function pushImage(bridge: any, containerID: number, containerName: string, imageData: number[]): Promise<void> {
@@ -555,12 +759,26 @@ export async function renderUI(
     if (state === TimerState.IDLE) {
       if (currentScreenType !== 'preset') {
         await clearTimerImages(bridge, true);
+        await clearPresetImage(bridge);
       }
-      pushText(bridge, buildPresetContent(selectedPreset));
+      const presetBytes = await getPresetImageBytes(selectedPreset);
+      await pushImage(bridge, PRESET_CONTAINER_ID, PRESET_CONTAINER_NAME, presetBytes);
+      // Use preset crop in digit areas so they blend in (no black rectangle)
+      const mpPresetBytes = await getPresetDigitAreaBytes(selectedPreset, MP_X, TIMER_Y, MP_WIDTH, DIGIT_HEIGHT);
+      const mssPresetBytes = await getPresetDigitAreaBytes(selectedPreset, MSS_X, TIMER_Y, MSS_WIDTH, DIGIT_HEIGHT);
+      if (mpPresetBytes.length > 0) await pushImage(bridge, MP_CONTAINER_ID, MP_CONTAINER_NAME, mpPresetBytes);
+      if (mssPresetBytes.length > 0) await pushImage(bridge, MSS_CONTAINER_ID, MSS_CONTAINER_NAME, mssPresetBytes);
+      lastDisplayedTime = '';
+      areTimerImagesVisible = false;
+      pushText(bridge, ' ', true);
+      lastTextContent = ' ';
       currentScreenType = 'preset';
       return;
     }
 
+    if (currentScreenType === 'preset') {
+      await clearPresetImage(bridge);
+    }
     pushText(bridge, buildTimerOverlayText(state, isBlinkingVisible));
 
     if (currentScreenType !== 'timer') {
@@ -616,11 +834,22 @@ export async function createPageContainers(bridge: any, selectedPreset = 5): Pro
       height: DIGIT_HEIGHT,
     });
 
+    const presetContainer = new ImageContainerProperty({
+      containerID: PRESET_CONTAINER_ID,
+      containerName: PRESET_CONTAINER_NAME,
+      xPosition: 0,
+      yPosition: 0,
+      width: DISPLAY_WIDTH,
+      height: DISPLAY_HEIGHT,
+    });
+
+    // Preset container first so it is drawn behind the digit containers (MP, MSS).
+    // When timer runs we clear it with black; digits stay on top and remain visible.
     const result = await bridge.createStartUpPageContainer(
       new CreateStartUpPageContainer({
-        containerTotalNum: 3,
+        containerTotalNum: 4,
         textObject: [textContainer],
-        imageObject: [mpContainer, mssContainer],
+        imageObject: [presetContainer, mpContainer, mssContainer],
       }),
     );
 
