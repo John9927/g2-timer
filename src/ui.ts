@@ -64,6 +64,9 @@ let currentScreenType: 'preset' | 'timer' | null = null;
 let lastDisplayedTime = '';
 let lastTextContent = '';
 let areTimerImagesVisible = false;
+/** Single-flight: only one push to glasses at a time (like Tesla app). */
+let glassesUpdateInFlight = false;
+let pendingUpdate: { bridge: any; seconds: number; forceAll: boolean } | null = null;
 
 const imageCache = new Map<string, number[]>();
 
@@ -169,13 +172,8 @@ function pushText(bridge: any, content: string, force = false) {
   lastTextContent = content;
 }
 
-// When multiple pushes run at once, only the latest completion should update state
-let timerUpdateSequence = 0;
-
 async function applyTimerImages(bridge: any, seconds: number, forceAll: boolean) {
   const time = formatTime(seconds);
-  const mySeq = ++timerUpdateSequence;
-
   const mTens = time[0], mOnes = time[1], ss = time.slice(3, 5);
   const prevMTens = lastDisplayedTime[0], prevMOnes = lastDisplayedTime[1];
   const prevSS = lastDisplayedTime.slice(3, 5);
@@ -193,28 +191,41 @@ async function applyTimerImages(bridge: any, seconds: number, forceAll: boolean)
     await pushImage(bridge, MP_CONTAINER_ID, MP_CONTAINER_NAME, mpData);
   }
 
-  // Only commit if we're still the latest (avoid old push overwriting newer)
-  if (mySeq === timerUpdateSequence) {
-    lastDisplayedTime = time;
-    areTimerImagesVisible = true;
-  }
+  lastDisplayedTime = time;
+  areTimerImagesVisible = true;
 }
 
 /**
- * Send timer images to glasses. Called every second; overlapping pushes allowed
- * so the display updates every 1s (device shows latest).
+ * Send timer images to glasses. Single-flight like Tesla app: only one push at a time.
+ * If called while busy, stores latest and applies it once when current push finishes.
  */
 export async function updateGlassesTimer(bridge: any, seconds: number, forceAll = false): Promise<void> {
+  if (glassesUpdateInFlight) {
+    pendingUpdate = { bridge, seconds, forceAll: pendingUpdate?.forceAll || forceAll };
+    return;
+  }
+  glassesUpdateInFlight = true;
   try {
     await applyTimerImages(bridge, seconds, forceAll);
+    if (pendingUpdate) {
+      const p = pendingUpdate;
+      pendingUpdate = null;
+      await applyTimerImages(p.bridge, p.seconds, p.forceAll);
+    }
   } catch (err) {
     console.error('[UI] glasses update error:', err);
+  } finally {
+    glassesUpdateInFlight = false;
   }
 }
 
 // ── Clear digit containers ────────────────────────────────────────
 async function clearTimerImages(bridge: any) {
   if (!areTimerImagesVisible) return;
+  const deadline = Date.now() + 3000;
+  while (glassesUpdateInFlight && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 80));
+  }
   try {
     await pushImage(bridge, MP_CONTAINER_ID, MP_CONTAINER_NAME, await getBlankBytes('blank-mp', MP_WIDTH, DIGIT_HEIGHT));
     await pushImage(bridge, MSS_CONTAINER_ID, MSS_CONTAINER_NAME, await getBlankBytes('blank-mss', MSS_WIDTH, DIGIT_HEIGHT));
@@ -291,6 +302,7 @@ export async function createPageContainers(bridge: any, selectedPreset = 5): Pro
     lastTextContent = presetContent;
     lastDisplayedTime = '';
     areTimerImagesVisible = false;
+    pendingUpdate = null;
 
     await clearTimerImages(bridge);
     return true;
