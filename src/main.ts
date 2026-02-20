@@ -10,6 +10,7 @@ let bridge: any = null;
 let timerState: TimerStateManager | null = null;
 let isInitialized = false;
 let isInForeground = true;
+let renderUIInProgress = false;
 let remoteStartTimeoutId: ReturnType<typeof setTimeout> | null = null;
 let remoteStartCountdownIntervalId: ReturnType<typeof setInterval> | null = null;
 let remoteStartScheduledAt: number | null = null;
@@ -190,32 +191,45 @@ async function init() {
     setupRemoteControl();
 
     // Set up update callback (called every second when running)
-    // Don't await renderUI so the timer never blocks; glasses may skip frames under load but won't get stuck
+    // Only one render at a time so glasses don't block; when done, send current time to stay in sync
+    function scheduleGlassesUpdate() {
+      if (!isInForeground || !bridge || !timerState) return;
+      if (renderUIInProgress) return;
+      renderUIInProgress = true;
+      renderUI(
+        bridge,
+        timerState.getState(),
+        timerState.getSelectedPreset(),
+        timerState.getRemainingSeconds(),
+        timerState.getBlinkVisibility()
+      )
+        .catch((err) => console.error('[Timer] renderUI:', err))
+        .finally(() => {
+          renderUIInProgress = false;
+          if (timerState?.getState() === TimerState.RUNNING) scheduleGlassesUpdate();
+        });
+    }
     timerState.setOnUpdate(() => {
       updateRemoteView();
-      if (isInForeground && bridge && timerState) {
-        renderUI(
-          bridge,
-          timerState.getState(),
-          timerState.getSelectedPreset(),
-          timerState.getRemainingSeconds(),
-          timerState.getBlinkVisibility()
-        ).catch((err) => console.error('[Timer] renderUI:', err));
-      }
+      scheduleGlassesUpdate();
     });
 
     // Set up state change callback (called when state changes)
     timerState.setOnStateChange(() => {
       updateRemoteView();
-      if (isInForeground && bridge && timerState) {
-        renderUI(
-          bridge,
-          timerState.getState(),
-          timerState.getSelectedPreset(),
-          timerState.getRemainingSeconds(),
-          timerState.getBlinkVisibility()
-        ).catch((err) => console.error('[Timer] renderUI:', err));
-      }
+      if (!isInForeground || !bridge || !timerState) return;
+      renderUIInProgress = true;
+      renderUI(
+        bridge,
+        timerState.getState(),
+        timerState.getSelectedPreset(),
+        timerState.getRemainingSeconds(),
+        timerState.getBlinkVisibility()
+      )
+        .catch((err) => console.error('[Timer] renderUI:', err))
+        .finally(() => {
+          renderUIInProgress = false;
+        });
     });
 
     // Create page containers once - show preset selection initially
