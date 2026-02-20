@@ -1,6 +1,6 @@
 import { waitForEvenAppBridge } from '@evenrealities/even_hub_sdk';
 import { TimerStateManager } from './timerState';
-import { createPageContainers, renderUI, formatTime } from './ui';
+import { createPageContainers, renderUI, formatTime, setUiDebugLogger } from './ui';
 import { TimerState } from './constants';
 
 const REMOTE_START_DELAY_MS = 3000;
@@ -19,9 +19,10 @@ type RenderReason = 'tick' | 'state' | 'foreground' | 'manual';
 
 const TELEMETRY_WINDOW_SIZE = 120;
 const TELEMETRY_FAST_BUCKET_RATIO = 0.25;
-const TELEMETRY_LOG_LIMIT = 14;
+const TELEMETRY_LOG_LIMIT = 120;
 
 const telemetrySamples: number[] = [];
+const telemetryTickSamples: number[] = [];
 const telemetryLogLines: string[] = [];
 let telemetryInFlightRenders = 0;
 let telemetryMaxQueueDepth = 0;
@@ -56,16 +57,19 @@ function updateTelemetrySummary(lastMs: number, reason: RenderReason): void {
     return;
   }
 
-  const avgMs = average(telemetrySamples);
-  const sorted = [...telemetrySamples].sort((a, b) => a - b);
+  const avgAllMs = average(telemetrySamples);
+  const reference = telemetryTickSamples.length ? telemetryTickSamples : telemetrySamples;
+  const avgTickMs = average(reference);
+  const sorted = [...reference].sort((a, b) => a - b);
   const fastBucketCount = Math.max(1, Math.floor(sorted.length * TELEMETRY_FAST_BUCKET_RATIO));
   const fixedMs = average(sorted.slice(0, fastBucketCount));
-  const variableMs = Math.max(0, avgMs - fixedMs);
+  const variableMs = Math.max(0, avgTickMs - fixedMs);
 
   summaryEl.textContent =
     `Last (${reason}): ${toMsText(lastMs)}\n` +
-    `Average (${telemetrySamples.length}): ${toMsText(avgMs)}\n` +
-    `Fixed delay est.: ${toMsText(fixedMs)}\n` +
+    `Average all (${telemetrySamples.length}): ${toMsText(avgAllMs)}\n` +
+    `Average tick (${reference.length}): ${toMsText(avgTickMs)}\n` +
+    `Fixed delay est. (tick): ${toMsText(fixedMs)}\n` +
     `Variable extra: ${toMsText(variableMs)} | Max queue: ${telemetryMaxQueueDepth}`;
 }
 
@@ -74,6 +78,10 @@ function pushTelemetryLog(line: string): void {
   if (telemetryLogLines.length > TELEMETRY_LOG_LIMIT) telemetryLogLines.length = TELEMETRY_LOG_LIMIT;
   const logEl = getTelemetryLogEl();
   if (logEl) logEl.textContent = telemetryLogLines.join('\n');
+}
+
+function pushDetailedLog(source: string, message: string): void {
+  pushTelemetryLog(source ? `${source} ${message}` : message);
 }
 
 function recordRenderTelemetry(
@@ -85,16 +93,22 @@ function recordRenderTelemetry(
 ): void {
   telemetrySamples.push(elapsedMs);
   if (telemetrySamples.length > TELEMETRY_WINDOW_SIZE) telemetrySamples.shift();
+  if (reason === 'tick') {
+    telemetryTickSamples.push(elapsedMs);
+    if (telemetryTickSamples.length > TELEMETRY_WINDOW_SIZE) telemetryTickSamples.shift();
+  }
   if (queueDepth > telemetryMaxQueueDepth) telemetryMaxQueueDepth = queueDepth;
 
   updateTelemetrySummary(elapsedMs, reason);
 
-  const sorted = [...telemetrySamples].sort((a, b) => a - b);
+  const reference = telemetryTickSamples.length ? telemetryTickSamples : telemetrySamples;
+  const sorted = [...reference].sort((a, b) => a - b);
   const fastBucketCount = Math.max(1, Math.floor(sorted.length * TELEMETRY_FAST_BUCKET_RATIO));
   const fixedMs = average(sorted.slice(0, fastBucketCount));
   const extraMs = Math.max(0, elapsedMs - fixedMs);
 
-  pushTelemetryLog(
+  pushDetailedLog(
+    '[RENDER]',
     `${reason.toUpperCase()} ${toMsText(elapsedMs)} (fixed ${toMsText(fixedMs)}, extra ${toMsText(extraMs)}, q ${queueDepth}) ` +
     `${state} ${formatTime(remainingSeconds)}`,
   );
@@ -102,9 +116,12 @@ function recordRenderTelemetry(
 
 // ── Phone UI ──────────────────────────────────────────────────────
 function clearRemoteStartPending() {
+  const hadTimeout = remoteStartTimeoutId !== null;
+  const hadInterval = remoteStartCountdownIntervalId !== null;
   if (remoteStartTimeoutId !== null) { clearTimeout(remoteStartTimeoutId); remoteStartTimeoutId = null; }
   if (remoteStartCountdownIntervalId !== null) { clearInterval(remoteStartCountdownIntervalId); remoteStartCountdownIntervalId = null; }
   remoteStartScheduledAt = null;
+  pushDetailedLog('[REMOTE]', `clearRemoteStartPending timeout=${hadTimeout} interval=${hadInterval}`);
 }
 
 function updateRemoteView() {
@@ -152,7 +169,10 @@ function updateRemoteView() {
 // ── Fire-and-forget glasses render (never awaited, never blocks) ──
 // Send every tick so display updates every 1s; overlapping pushes allowed.
 function sendToGlasses(reason: RenderReason = 'tick') {
-  if (!isInForeground || !bridge || !timerState) return;
+  if (!isInForeground || !bridge || !timerState) {
+    pushDetailedLog('[RENDER]', `skip reason=${reason} foreground=${isInForeground} bridge=${Boolean(bridge)} stateMgr=${Boolean(timerState)}`);
+    return;
+  }
   const state = timerState.getState();
   const selectedPreset = timerState.getSelectedPreset();
   const remainingSeconds = timerState.getRemainingSeconds();
@@ -160,6 +180,7 @@ function sendToGlasses(reason: RenderReason = 'tick') {
   const startedAt = performance.now();
   telemetryInFlightRenders++;
   const queueDepth = telemetryInFlightRenders;
+  pushDetailedLog('[RENDER]', `start reason=${reason} q=${queueDepth} state=${state} t=${formatTime(remainingSeconds)}`);
 
   renderUI(
     bridge,
@@ -171,15 +192,19 @@ function sendToGlasses(reason: RenderReason = 'tick') {
     const elapsedMs = performance.now() - startedAt;
     recordRenderTelemetry(reason, elapsedMs, queueDepth, state, remainingSeconds);
   }).catch(err => {
-    pushTelemetryLog(`ERR ${reason.toUpperCase()} ${String(err)}`);
+    pushDetailedLog('[RENDER]', `ERR ${reason.toUpperCase()} ${String(err)}`);
     console.error('[Timer] renderUI:', err);
   }).finally(() => {
     telemetryInFlightRenders = Math.max(0, telemetryInFlightRenders - 1);
+    pushDetailedLog('[RENDER]', `end reason=${reason} inFlight=${telemetryInFlightRenders}`);
   });
 }
 
 function sendToGlassesImmediate(reason: RenderReason = 'manual') {
-  if (!bridge || !timerState) return;
+  if (!bridge || !timerState) {
+    pushDetailedLog('[RENDER]', `skip-immediate reason=${reason} bridge=${Boolean(bridge)} stateMgr=${Boolean(timerState)}`);
+    return;
+  }
   const state = timerState.getState();
   const selectedPreset = timerState.getSelectedPreset();
   const remainingSeconds = timerState.getRemainingSeconds();
@@ -187,6 +212,7 @@ function sendToGlassesImmediate(reason: RenderReason = 'manual') {
   const startedAt = performance.now();
   telemetryInFlightRenders++;
   const queueDepth = telemetryInFlightRenders;
+  pushDetailedLog('[RENDER]', `start-immediate reason=${reason} q=${queueDepth} state=${state} t=${formatTime(remainingSeconds)}`);
 
   renderUI(
     bridge,
@@ -198,10 +224,11 @@ function sendToGlassesImmediate(reason: RenderReason = 'manual') {
     const elapsedMs = performance.now() - startedAt;
     recordRenderTelemetry(reason, elapsedMs, queueDepth, state, remainingSeconds);
   }).catch(err => {
-    pushTelemetryLog(`ERR ${reason.toUpperCase()} ${String(err)}`);
+    pushDetailedLog('[RENDER]', `ERR ${reason.toUpperCase()} ${String(err)}`);
     console.error('[Timer] renderUI:', err);
   }).finally(() => {
     telemetryInFlightRenders = Math.max(0, telemetryInFlightRenders - 1);
+    pushDetailedLog('[RENDER]', `end-immediate reason=${reason} inFlight=${telemetryInFlightRenders}`);
   });
 }
 
@@ -210,10 +237,12 @@ function setupRemoteControl() {
   const btnStart = document.getElementById('btn-start-pause');
   const btnReset = document.getElementById('btn-reset');
   const presetBtns = document.querySelectorAll('#remote-preset-buttons .preset-btn');
+  pushDetailedLog('[REMOTE]', `setupRemoteControl presets=${presetBtns.length}`);
 
   btnStart?.addEventListener('click', () => {
     if (!timerState || !bridge) return;
     const state = timerState.getState();
+    pushDetailedLog('[REMOTE]', `btn-start-pause click state=${state}`);
 
     if (state === TimerState.RUNNING) {
       clearRemoteStartPending();
@@ -231,12 +260,14 @@ function setupRemoteControl() {
       remoteStartScheduledAt = Date.now();
       remoteStartCountdownIntervalId = setInterval(() => updateRemoteView(), REMOTE_START_COUNTDOWN_INTERVAL_MS);
       remoteStartTimeoutId = setTimeout(() => { clearRemoteStartPending(); updateRemoteView(); }, REMOTE_START_DELAY_MS);
+      pushDetailedLog('[REMOTE]', `delayed-start armed delayMs=${REMOTE_START_DELAY_MS}`);
       updateRemoteView();
     }
   });
 
   btnReset?.addEventListener('click', () => {
     if (!timerState || !bridge) return;
+    pushDetailedLog('[REMOTE]', `btn-reset click state=${timerState.getState()}`);
     clearRemoteStartPending();
     timerState.resetToPreset();
   });
@@ -245,6 +276,7 @@ function setupRemoteControl() {
     btn.addEventListener('click', () => {
       const min = parseInt((btn as HTMLElement).dataset.preset || '', 10);
       if (!timerState || !bridge || !min) return;
+      pushDetailedLog('[REMOTE]', `preset click ${min}`);
       timerState.setPreset(min);
     });
   });
@@ -258,8 +290,11 @@ const SWIPE_COOLDOWN_MS = 300;
 function setupEventHandlers() {
   if (!bridge) return;
   try {
+    pushDetailedLog('[EVENT]', 'setupEventHandlers attached');
     bridge.onEvenHubEvent((event: any) => {
       if (!timerState || !isInForeground) return;
+      const type = event?.type || event?.eventType || event?.textEvent?.eventType;
+      pushDetailedLog('[EVENT]', `recv type=${String(type)}`);
       console.log('Even Hub event:', event);
 
       if (event.textEvent) {
@@ -272,9 +307,11 @@ function setupEventHandlers() {
       if (event.type === 'sysEvent') {
         if (event.eventType === 'enterForeground') {
           isInForeground = true;
+          pushDetailedLog('[EVENT]', 'enterForeground');
           timerState?.handleForeground();
           sendToGlassesImmediate('foreground');
         } else if (event.eventType === 'exitForeground') {
+          pushDetailedLog('[EVENT]', 'exitForeground');
           isInForeground = false;
           timerState?.handleBackground();
         }
@@ -283,62 +320,79 @@ function setupEventHandlers() {
 
       if (event.type === 'tap' || event.eventType === 'tap' || event.eventType === 0 || event.eventType === undefined) {
         const taps = event.tapCount || event.taps || 1;
+        pushDetailedLog('[EVENT]', `tap count=${taps}`);
         if (taps === 1) handleSingleTap();
         else if (taps === 2) { timerState.resetToPreset(); }
       }
     });
   } catch (err) {
+    pushDetailedLog('[EVENT]', `setup error ${String(err)}`);
     console.error('Error setting up event handlers:', err);
   }
 }
 
 function handleSingleTap() {
   if (!timerState || !bridge) return;
+  pushDetailedLog('[INPUT]', `singleTap state=${timerState.getState()}`);
   timerState.toggleStartPause();
 }
 
 function handleSwipe(dir: 1 | -1) {
   if (!timerState || !bridge) return;
   const now = Date.now();
-  if (now - lastSwipeTime < SWIPE_COOLDOWN_MS) return;
+  const elapsed = now - lastSwipeTime;
+  if (elapsed < SWIPE_COOLDOWN_MS) {
+    pushDetailedLog('[INPUT]', `swipe ignored dir=${dir} elapsed=${elapsed}ms cooldown=${SWIPE_COOLDOWN_MS}ms`);
+    return;
+  }
   lastSwipeTime = now;
+  pushDetailedLog('[INPUT]', `swipe dir=${dir} accepted`);
   if (dir === 1) timerState.cyclePreset(); else timerState.cyclePresetBackward();
 }
 
 // ── Bootstrap ─────────────────────────────────────────────────────
 async function init() {
   try {
+    pushDetailedLog('[APP]', 'init start');
+    setUiDebugLogger((line) => pushDetailedLog('', line));
     updateRemoteView();
     bridge = await waitForEvenAppBridge();
+    pushDetailedLog('[APP]', `bridge received=${Boolean(bridge)}`);
     console.log('[Boot] Bridge received');
     updateRemoteView();
 
     if (!bridge) {
+      pushDetailedLog('[APP]', 'bridge unavailable');
       console.error('[Boot] Bridge not available');
       const s = document.getElementById('remote-status');
       if (s) { s.textContent = 'Connection unavailable'; s.className = 'error'; }
       timerState = new TimerStateManager();
+      timerState.setOnDebugLog((line) => pushDetailedLog('', line));
       setupRemoteControl();
       updateRemoteView();
       return;
     }
 
     timerState = new TimerStateManager();
+    timerState.setOnDebugLog((line) => pushDetailedLog('', line));
     setupRemoteControl();
 
     // Every timer tick: phone UI updates instantly, glasses get a render if idle
     timerState.setOnUpdate(() => {
+      pushDetailedLog('[CALLBACK]', `onUpdate state=${timerState?.getState()} t=${timerState ? formatTime(timerState.getRemainingSeconds()) : '--:--'}`);
       updateRemoteView();
       sendToGlasses('tick');
     });
 
     // State transitions (start/pause/done): always push to glasses immediately
     timerState.setOnStateChange(() => {
+      pushDetailedLog('[CALLBACK]', `onStateChange state=${timerState?.getState()} t=${timerState ? formatTime(timerState.getRemainingSeconds()) : '--:--'}`);
       updateRemoteView();
       sendToGlassesImmediate('state');
     });
 
     const ok = await createPageContainers(bridge, timerState.getSelectedPreset());
+    pushDetailedLog('[APP]', `createPageContainers ok=${ok}`);
     if (!ok) {
       console.error('Failed to create page containers');
       await renderUI(bridge, TimerState.IDLE, 5, 300, true, 'ERROR: container creation failed');
@@ -349,9 +403,11 @@ async function init() {
 
     setupEventHandlers();
     await renderUI(bridge, TimerState.IDLE, timerState.getSelectedPreset(), timerState.getRemainingSeconds(), true);
+    pushDetailedLog('[APP]', 'initial render complete');
     isInitialized = true;
     updateRemoteView();
   } catch (err) {
+    pushDetailedLog('[APP]', `init error ${String(err)}`);
     console.error('Failed to initialize:', err);
     const s = document.getElementById('remote-status');
     if (s) { s.textContent = `Error: ${err}`; s.className = 'error'; }
@@ -359,10 +415,12 @@ async function init() {
 }
 
 window.addEventListener('beforeunload', () => {
+  pushDetailedLog('[APP]', 'beforeunload');
   clearRemoteStartPending();
   if (bridge && isInitialized) {
     try { bridge.shutDownPageContainer(0); } catch {}
   }
+  setUiDebugLogger(null);
   timerState?.cleanup();
 });
 

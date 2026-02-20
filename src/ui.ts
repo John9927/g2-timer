@@ -8,6 +8,8 @@ import {
   ImageContainerProperty,
 } from '@evenrealities/even_hub_sdk';
 
+export type UiDebugLogFn = (line: string) => void;
+
 const DISPLAY_WIDTH = 576;
 const DISPLAY_HEIGHT = 288;
 
@@ -65,24 +67,39 @@ let glassesUpdateInFlight = false;
 let pendingUpdate: { bridge: any; seconds: number; forceAll: boolean; sessionId: number } | null = null;
 let cacheWarmPromise: Promise<void> | null = null;
 let renderSessionId = 0;
+let uiDebugLog: UiDebugLogFn | null = null;
 
 const imageCache = new Map<string, number[]>();
 
 let canvas: HTMLCanvasElement | null = null;
 let ctx: CanvasRenderingContext2D | null = null;
 
+function debug(line: string): void {
+  if (uiDebugLog) {
+    uiDebugLog(`[UI] ${line}`);
+  }
+}
+
+export function setUiDebugLogger(logger: UiDebugLogFn | null): void {
+  uiDebugLog = logger;
+  debug(`debug logger ${logger ? 'attached' : 'detached'}`);
+}
+
 function getContext(): CanvasRenderingContext2D | null {
   if (!canvas) {
     canvas = document.createElement('canvas');
     ctx = canvas.getContext('2d');
+    debug(`canvas context created available=${Boolean(ctx)}`);
   }
   return ctx;
 }
 
 function startRenderSession(nextScreen: 'preset' | 'timer'): number {
+  const previousScreen = currentScreenType;
   renderSessionId++;
   currentScreenType = nextScreen;
   pendingUpdate = null;
+  debug(`startRenderSession #${renderSessionId} ${String(previousScreen)} -> ${nextScreen}`);
   return renderSessionId;
 }
 
@@ -132,7 +149,10 @@ function drawPattern(c: CanvasRenderingContext2D, pattern: PixelPattern, x: numb
 
 async function renderPng(width: number, height: number, draw: (c: CanvasRenderingContext2D) => void): Promise<number[]> {
   const c = getContext();
-  if (!c || !canvas) return [];
+  if (!c || !canvas) {
+    debug(`renderPng skipped no canvas context (${width}x${height})`);
+    return [];
+  }
 
   canvas.width = width;
   canvas.height = height;
@@ -153,8 +173,10 @@ async function renderPng(width: number, height: number, draw: (c: CanvasRenderin
 async function cachedPng(key: string, width: number, height: number, draw: (c: CanvasRenderingContext2D) => void): Promise<number[]> {
   const cached = imageCache.get(key);
   if (cached) return cached;
+  debug(`cache miss key=${key}`);
   const bytes = await renderPng(width, height, draw);
   if (bytes.length) imageCache.set(key, bytes);
+  else debug(`cache fill empty key=${key}`);
   return bytes;
 }
 
@@ -187,13 +209,18 @@ function prefetchSecond(seconds: number): void {
   const mTens = time[0];
   const mOnes = time[1];
   const ss = time.slice(3, 5);
+  debug(`prefetchSecond ${time}`);
   void getMpBytes(mTens);
   void getMssBytes(mOnes, ss);
 }
 
 async function warmBaseCache(): Promise<void> {
-  if (cacheWarmPromise) return cacheWarmPromise;
+  if (cacheWarmPromise) {
+    debug('warmBaseCache already in progress/completed');
+    return cacheWarmPromise;
+  }
 
+  debug('warmBaseCache start');
   cacheWarmPromise = (async () => {
     for (let digit = 0; digit <= 9; digit++) {
       await getMpBytes(String(digit));
@@ -204,7 +231,9 @@ async function warmBaseCache(): Promise<void> {
       const ss = String(second).padStart(2, '0');
       await getMssBytes('0', ss);
     }
+    debug('warmBaseCache completed');
   })().catch((error) => {
+    debug(`warmBaseCache failed ${String(error)}`);
     console.warn('[UI] warmBaseCache failed:', error);
   });
 
@@ -212,23 +241,37 @@ async function warmBaseCache(): Promise<void> {
 }
 
 async function pushImage(bridge: any, id: number, name: string, data: number[]): Promise<void> {
-  if (!data.length) return;
+  if (!data.length) {
+    debug(`pushImage skipped empty id=${id} name=${name}`);
+    return;
+  }
+  const startedAt = performance.now();
   await bridge.updateImageRawData(new ImageRawDataUpdate({ containerID: id, containerName: name, imageData: data }));
+  debug(`pushImage ok id=${id} name=${name} bytes=${data.length} took=${(performance.now() - startedAt).toFixed(1)}ms`);
 }
 
 function pushText(bridge: any, content: string, force = false): void {
-  if (!force && content === lastTextContent) return;
+  if (!force && content === lastTextContent) {
+    debug('pushText skipped unchanged');
+    return;
+  }
   const metrics = getTextMetrics(content);
+  const startedAt = performance.now();
   bridge.textContainerUpgrade(new TextContainerUpgrade({
     containerID: TEXT_CONTAINER_ID, containerName: TEXT_CONTAINER_NAME,
     content, contentLength: metrics.contentLength, contentOffset: metrics.contentOffset,
   }));
+  const firstLine = content.split('\n')[0] || '';
+  debug(`pushText ${force ? 'force' : 'normal'} len=${metrics.contentLength} firstLine="${firstLine}" took=${(performance.now() - startedAt).toFixed(1)}ms`);
   lastTextContent = content;
 }
 
 async function applyTimerImages(bridge: any, seconds: number, forceAll: boolean): Promise<void> {
   const sessionId = renderSessionId;
-  if (!isTimerSessionActive(sessionId)) return;
+  if (!isTimerSessionActive(sessionId)) {
+    debug(`applyTimerImages skipped stale session=${sessionId}`);
+    return;
+  }
 
   const time = formatTime(seconds);
   const mTens = time[0];
@@ -240,22 +283,36 @@ async function applyTimerImages(bridge: any, seconds: number, forceAll: boolean)
 
   const needMp = forceAll || !areTimerImagesVisible || mTens !== prevMTens;
   const needMss = forceAll || !areTimerImagesVisible || mOnes !== prevMOnes || ss !== prevSS;
-  if (!needMp && !needMss && !forceAll) return;
+  if (!needMp && !needMss && !forceAll) {
+    debug(`applyTimerImages skip no-diff time=${time}`);
+    return;
+  }
+  debug(`applyTimerImages time=${time} needMp=${needMp} needMss=${needMss} force=${forceAll}`);
 
   if (needMss) {
     const mssData = await getMssBytes(mOnes, ss);
-    if (!isTimerSessionActive(sessionId)) return;
+    if (!isTimerSessionActive(sessionId)) {
+      debug(`applyTimerImages stale before MSS push session=${sessionId}`);
+      return;
+    }
     await pushImage(bridge, MSS_CONTAINER_ID, MSS_CONTAINER_NAME, mssData);
   }
   if (needMp) {
     const mpData = await getMpBytes(mTens);
-    if (!isTimerSessionActive(sessionId)) return;
+    if (!isTimerSessionActive(sessionId)) {
+      debug(`applyTimerImages stale before MP push session=${sessionId}`);
+      return;
+    }
     await pushImage(bridge, MP_CONTAINER_ID, MP_CONTAINER_NAME, mpData);
   }
 
-  if (!isTimerSessionActive(sessionId)) return;
+  if (!isTimerSessionActive(sessionId)) {
+    debug(`applyTimerImages stale after pushes session=${sessionId}`);
+    return;
+  }
   lastDisplayedTime = time;
   areTimerImagesVisible = true;
+  debug(`applyTimerImages committed time=${time}`);
 
   if (seconds > 0 && isTimerSessionActive(sessionId)) {
     prefetchSecond(seconds - 1);
@@ -264,52 +321,86 @@ async function applyTimerImages(bridge: any, seconds: number, forceAll: boolean)
 }
 
 export async function updateGlassesTimer(bridge: any, seconds: number, forceAll = false, sessionId = renderSessionId): Promise<void> {
-  if (!isTimerSessionActive(sessionId)) return;
+  if (!isTimerSessionActive(sessionId)) {
+    debug(`updateGlassesTimer skipped stale session=${sessionId} seconds=${seconds}`);
+    return;
+  }
 
   if (glassesUpdateInFlight) {
+    const previousPending = pendingUpdate ? `${pendingUpdate.seconds}` : 'none';
     pendingUpdate = { bridge, seconds, forceAll: Boolean(pendingUpdate?.forceAll || forceAll), sessionId };
+    debug(`updateGlassesTimer queued seconds=${seconds} force=${forceAll} prevPending=${previousPending}`);
     return;
   }
 
   glassesUpdateInFlight = true;
+  const startedAt = performance.now();
+  debug(`updateGlassesTimer start seconds=${seconds} force=${forceAll} session=${sessionId}`);
   try {
-    if (!isTimerSessionActive(sessionId)) return;
+    if (!isTimerSessionActive(sessionId)) {
+      debug(`updateGlassesTimer aborted stale before apply session=${sessionId}`);
+      return;
+    }
     await applyTimerImages(bridge, seconds, forceAll);
     if (pendingUpdate) {
       const queued = pendingUpdate;
       pendingUpdate = null;
+      debug(`updateGlassesTimer flush queued seconds=${queued.seconds} force=${queued.forceAll} session=${queued.sessionId}`);
 
       if (isTimerSessionActive(queued.sessionId)) {
         const lastSec = timeStringToSeconds(lastDisplayedTime);
         if (queued.seconds <= lastSec || queued.forceAll) {
+          debug(`updateGlassesTimer applying queued seconds=${queued.seconds} lastSec=${lastSec}`);
           await applyTimerImages(queued.bridge, queued.seconds, queued.forceAll);
+        } else {
+          debug(`updateGlassesTimer dropped queued seconds=${queued.seconds} lastSec=${lastSec}`);
         }
+      } else {
+        debug(`updateGlassesTimer dropped queued stale session=${queued.sessionId}`);
       }
     }
   } catch (error) {
+    debug(`updateGlassesTimer error ${String(error)}`);
     console.error('[UI] updateGlassesTimer error:', error);
   } finally {
     glassesUpdateInFlight = false;
+    debug(`updateGlassesTimer end took=${(performance.now() - startedAt).toFixed(1)}ms`);
   }
 }
 
 async function clearTimerImages(bridge: any, sessionId: number): Promise<void> {
-  if (!isPresetSessionActive(sessionId)) return;
+  if (!isPresetSessionActive(sessionId)) {
+    debug(`clearTimerImages skipped stale session=${sessionId}`);
+    return;
+  }
+
+  debug(`clearTimerImages start session=${sessionId}`);
 
   try {
     const blankMp = await getBlankBytes('blank-mp', MP_WIDTH, DIGIT_HEIGHT);
     const blankMss = await getBlankBytes('blank-mss', MSS_WIDTH, DIGIT_HEIGHT);
-    if (!isPresetSessionActive(sessionId)) return;
+    if (!isPresetSessionActive(sessionId)) {
+      debug(`clearTimerImages stale after blank build session=${sessionId}`);
+      return;
+    }
 
     await pushImage(bridge, MP_CONTAINER_ID, MP_CONTAINER_NAME, blankMp);
-    if (!isPresetSessionActive(sessionId)) return;
+    if (!isPresetSessionActive(sessionId)) {
+      debug(`clearTimerImages stale after MP clear session=${sessionId}`);
+      return;
+    }
 
     await pushImage(bridge, MSS_CONTAINER_ID, MSS_CONTAINER_NAME, blankMss);
-    if (!isPresetSessionActive(sessionId)) return;
+    if (!isPresetSessionActive(sessionId)) {
+      debug(`clearTimerImages stale after MSS clear session=${sessionId}`);
+      return;
+    }
 
     lastDisplayedTime = '';
     areTimerImagesVisible = false;
+    debug(`clearTimerImages complete session=${sessionId}`);
   } catch (error) {
+    debug(`clearTimerImages error ${String(error)}`);
     console.error('[UI] clearTimerImages error:', error);
   }
 }
@@ -322,9 +413,13 @@ export async function renderUI(
   blinkVisible = true,
   debugMessage?: string,
 ): Promise<void> {
-  if (!bridge) return;
+  if (!bridge) {
+    debug('renderUI skipped no bridge');
+    return;
+  }
   try {
     if (debugMessage) {
+      debug(`renderUI debugMessage="${debugMessage}"`);
       pushText(bridge, debugMessage, true);
       return;
     }
@@ -332,6 +427,7 @@ export async function renderUI(
     if (state === TimerState.IDLE) {
       const switchedFromTimer = currentScreenType !== 'preset';
       const sessionId = switchedFromTimer ? startRenderSession('preset') : renderSessionId;
+      debug(`renderUI preset state=IDLE selectedPreset=${selectedPreset} switchedFromTimer=${switchedFromTimer} session=${sessionId}`);
 
       pushText(bridge, buildPresetContent(selectedPreset));
 
@@ -342,6 +438,7 @@ export async function renderUI(
         if (switchedFromTimer) {
           setTimeout(() => {
             if (isPresetSessionActive(sessionId)) {
+              debug(`renderUI delayed clear session=${sessionId}`);
               void clearTimerImages(bridge, sessionId);
             }
           }, 140);
@@ -357,18 +454,25 @@ export async function renderUI(
     if (currentScreenType !== 'timer') {
       sessionId = startRenderSession('timer');
       lastDisplayedTime = '';
+      debug(`renderUI timer enter state=${state} remaining=${remainingSeconds}s session=${sessionId}`);
       await updateGlassesTimer(bridge, remainingSeconds, true, sessionId);
       return;
     }
+    debug(`renderUI timer update state=${state} remaining=${remainingSeconds}s session=${sessionId}`);
     await updateGlassesTimer(bridge, remainingSeconds, false, sessionId);
   } catch (error) {
+    debug(`renderUI error ${String(error)}`);
     console.error('[UI] renderUI error:', error);
   }
 }
 
 export async function createPageContainers(bridge: any, selectedPreset = 5): Promise<boolean> {
-  if (!bridge) return false;
+  if (!bridge) {
+    debug('createPageContainers skipped no bridge');
+    return false;
+  }
   try {
+    debug(`createPageContainers start preset=${selectedPreset}`);
     const presetContent = buildPresetContent(selectedPreset);
     const textContainer = new TextContainerProperty({
       containerID: TEXT_CONTAINER_ID, containerName: TEXT_CONTAINER_NAME,
@@ -390,6 +494,7 @@ export async function createPageContainers(bridge: any, selectedPreset = 5): Pro
     );
 
     if (StartUpPageCreateResult.normalize(result) !== StartUpPageCreateResult.success) {
+      debug(`createPageContainers failed result=${String(result)}`);
       console.error('[UI] createStartUpPageContainer failed:', result);
       return false;
     }
@@ -401,8 +506,10 @@ export async function createPageContainers(bridge: any, selectedPreset = 5): Pro
 
     void warmBaseCache();
     await clearTimerImages(bridge, renderSessionId);
+    debug('createPageContainers success');
     return true;
   } catch (error) {
+    debug(`createPageContainers error ${String(error)}`);
     console.error('[UI] createPageContainers error:', error);
     return false;
   }
@@ -415,4 +522,5 @@ export function resetPreviousTexts(): void {
   lastTextContent = '';
   areTimerImagesVisible = false;
   pendingUpdate = null;
+  debug('resetPreviousTexts');
 }
