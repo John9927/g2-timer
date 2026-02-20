@@ -1,6 +1,6 @@
 import { waitForEvenAppBridge } from '@evenrealities/even_hub_sdk';
 import { TimerStateManager } from './timerState';
-import { createPageContainers, renderUI, isGlassesBusy } from './ui';
+import { createPageContainers, renderUI } from './ui';
 import { TimerState } from './constants';
 
 const REMOTE_START_DELAY_MS = 3000;
@@ -65,8 +65,9 @@ function updateRemoteView() {
 }
 
 // ── Fire-and-forget glasses render (never awaited, never blocks) ──
+// Send every tick so display updates every 1s; overlapping pushes allowed.
 function sendToGlasses() {
-  if (!isInForeground || !bridge || !timerState || isGlassesBusy()) return;
+  if (!isInForeground || !bridge || !timerState) return;
   renderUI(
     bridge,
     timerState.getState(),
