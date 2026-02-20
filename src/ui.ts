@@ -26,19 +26,17 @@ const DIGIT_BASE_HEIGHT = 7;
 const COLON_BASE_WIDTH = 3;
 
 const DIGIT_HEIGHT = DIGIT_BASE_HEIGHT * DIGIT_SCALE;
-const MP_WIDTH = DIGIT_BASE_WIDTH * DIGIT_SCALE;
-const MINUTE_COLON_GAP = 0;
-const COLON_SECOND_GAP = 1;
+const MM_WIDTH = (DIGIT_BASE_WIDTH + 1 + DIGIT_BASE_WIDTH + 1 + COLON_BASE_WIDTH) * DIGIT_SCALE;
+const SS_WIDTH = (DIGIT_BASE_WIDTH + 1 + DIGIT_BASE_WIDTH) * DIGIT_SCALE;
+const MINUTE_DIGIT_GAP = 1;
+const MINUTE_COLON_GAP = 1;
 const SECOND_DIGIT_GAP = 1;
-const MSS_WIDTH =
-  (DIGIT_BASE_WIDTH + MINUTE_COLON_GAP + COLON_BASE_WIDTH + COLON_SECOND_GAP +
-    DIGIT_BASE_WIDTH + SECOND_DIGIT_GAP + DIGIT_BASE_WIDTH) * DIGIT_SCALE;
 
-const TIMER_GROUP_GAP = 12;
-const TOTAL_TIMER_WIDTH = MP_WIDTH + TIMER_GROUP_GAP + MSS_WIDTH;
+const TIMER_GROUP_GAP = 10;
+const TOTAL_TIMER_WIDTH = MM_WIDTH + TIMER_GROUP_GAP + SS_WIDTH;
 const TIMER_Y = Math.floor((DISPLAY_HEIGHT - DIGIT_HEIGHT) / 2);
-const MP_X = Math.floor((DISPLAY_WIDTH - TOTAL_TIMER_WIDTH) / 2);
-const MSS_X = MP_X + MP_WIDTH + TIMER_GROUP_GAP;
+const MM_X = Math.floor((DISPLAY_WIDTH - TOTAL_TIMER_WIDTH) / 2);
+const SS_X = MM_X + MM_WIDTH + TIMER_GROUP_GAP;
 
 type PixelPattern = number[][];
 
@@ -180,23 +178,32 @@ async function cachedPng(key: string, width: number, height: number, draw: (c: C
   return bytes;
 }
 
-function getMpBytes(digit: string): Promise<number[]> {
-  const pattern = DIGIT_PATTERNS[digit];
-  if (!pattern) return Promise.resolve([]);
-  return cachedPng(`mp:${digit}`, MP_WIDTH, DIGIT_HEIGHT, c => drawPattern(c, pattern, 0, 0, DIGIT_SCALE));
+function getMmBytes(minuteTens: string, minuteOnes: string): Promise<number[]> {
+  return cachedPng(`mm:${minuteTens}${minuteOnes}`, MM_WIDTH, DIGIT_HEIGHT, c => {
+    const mt = DIGIT_PATTERNS[minuteTens];
+    const mo = DIGIT_PATTERNS[minuteOnes];
+    if (!mt || !mo) return;
+
+    drawPattern(c, mt, 0, 0, DIGIT_SCALE);
+    drawPattern(c, mo, (DIGIT_BASE_WIDTH + MINUTE_DIGIT_GAP) * DIGIT_SCALE, 0, DIGIT_SCALE);
+    drawPattern(
+      c,
+      COLON_PATTERN,
+      (DIGIT_BASE_WIDTH + MINUTE_DIGIT_GAP + DIGIT_BASE_WIDTH + MINUTE_COLON_GAP) * DIGIT_SCALE,
+      0,
+      DIGIT_SCALE,
+    );
+  });
 }
 
-function getMssBytes(minuteOnes: string, seconds: string): Promise<number[]> {
-  return cachedPng(`mss:${minuteOnes}${seconds}`, MSS_WIDTH, DIGIT_HEIGHT, c => {
-    const mo = DIGIT_PATTERNS[minuteOnes];
+function getSsBytes(seconds: string): Promise<number[]> {
+  return cachedPng(`ss:${seconds}`, SS_WIDTH, DIGIT_HEIGHT, c => {
     const st = DIGIT_PATTERNS[seconds[0]];
     const so = DIGIT_PATTERNS[seconds[1]];
-    if (!mo || !st || !so) return;
+    if (!st || !so) return;
 
-    drawPattern(c, mo, 0, 0, DIGIT_SCALE);
-    drawPattern(c, COLON_PATTERN, (DIGIT_BASE_WIDTH + MINUTE_COLON_GAP) * DIGIT_SCALE, 0, DIGIT_SCALE);
-    drawPattern(c, st, (DIGIT_BASE_WIDTH + MINUTE_COLON_GAP + COLON_BASE_WIDTH + COLON_SECOND_GAP) * DIGIT_SCALE, 0, DIGIT_SCALE);
-    drawPattern(c, so, (DIGIT_BASE_WIDTH + MINUTE_COLON_GAP + COLON_BASE_WIDTH + COLON_SECOND_GAP + DIGIT_BASE_WIDTH + SECOND_DIGIT_GAP) * DIGIT_SCALE, 0, DIGIT_SCALE);
+    drawPattern(c, st, 0, 0, DIGIT_SCALE);
+    drawPattern(c, so, (DIGIT_BASE_WIDTH + SECOND_DIGIT_GAP) * DIGIT_SCALE, 0, DIGIT_SCALE);
   });
 }
 
@@ -210,8 +217,8 @@ function prefetchSecond(seconds: number): void {
   const mOnes = time[1];
   const ss = time.slice(3, 5);
   debug(`prefetchSecond ${time}`);
-  void getMpBytes(mTens);
-  void getMssBytes(mOnes, ss);
+  void getMmBytes(mTens, mOnes);
+  void getSsBytes(ss);
 }
 
 async function warmBaseCache(): Promise<void> {
@@ -222,14 +229,15 @@ async function warmBaseCache(): Promise<void> {
 
   debug('warmBaseCache start');
   cacheWarmPromise = (async () => {
-    for (let digit = 0; digit <= 9; digit++) {
-      await getMpBytes(String(digit));
+    for (let minute = 0; minute <= 60; minute++) {
+      const mm = String(minute).padStart(2, '0');
+      await getMmBytes(mm[0], mm[1]);
     }
-    await getBlankBytes('blank-mp', MP_WIDTH, DIGIT_HEIGHT);
-    await getBlankBytes('blank-mss', MSS_WIDTH, DIGIT_HEIGHT);
+    await getBlankBytes('blank-mp', MM_WIDTH, DIGIT_HEIGHT);
+    await getBlankBytes('blank-mss', SS_WIDTH, DIGIT_HEIGHT);
     for (let second = 0; second < 60; second++) {
       const ss = String(second).padStart(2, '0');
-      await getMssBytes('0', ss);
+      await getSsBytes(ss);
     }
     debug('warmBaseCache completed');
   })().catch((error) => {
@@ -281,29 +289,29 @@ async function applyTimerImages(bridge: any, seconds: number, forceAll: boolean)
   const prevMOnes = lastDisplayedTime[1];
   const prevSS = lastDisplayedTime.slice(3, 5);
 
-  const needMp = forceAll || !areTimerImagesVisible || mTens !== prevMTens;
-  const needMss = forceAll || !areTimerImagesVisible || mOnes !== prevMOnes || ss !== prevSS;
-  if (!needMp && !needMss && !forceAll) {
+  const needMm = forceAll || !areTimerImagesVisible || mTens !== prevMTens || mOnes !== prevMOnes;
+  const needSs = forceAll || !areTimerImagesVisible || ss !== prevSS;
+  if (!needMm && !needSs && !forceAll) {
     debug(`applyTimerImages skip no-diff time=${time}`);
     return;
   }
-  debug(`applyTimerImages time=${time} needMp=${needMp} needMss=${needMss} force=${forceAll}`);
+  debug(`applyTimerImages time=${time} needMm=${needMm} needSs=${needSs} force=${forceAll}`);
 
-  if (needMss) {
-    const mssData = await getMssBytes(mOnes, ss);
+  if (needSs) {
+    const ssData = await getSsBytes(ss);
     if (!isTimerSessionActive(sessionId)) {
-      debug(`applyTimerImages stale before MSS push session=${sessionId}`);
+      debug(`applyTimerImages stale before SS push session=${sessionId}`);
       return;
     }
-    await pushImage(bridge, MSS_CONTAINER_ID, MSS_CONTAINER_NAME, mssData);
+    await pushImage(bridge, MSS_CONTAINER_ID, MSS_CONTAINER_NAME, ssData);
   }
-  if (needMp) {
-    const mpData = await getMpBytes(mTens);
+  if (needMm) {
+    const mmData = await getMmBytes(mTens, mOnes);
     if (!isTimerSessionActive(sessionId)) {
-      debug(`applyTimerImages stale before MP push session=${sessionId}`);
+      debug(`applyTimerImages stale before MM push session=${sessionId}`);
       return;
     }
-    await pushImage(bridge, MP_CONTAINER_ID, MP_CONTAINER_NAME, mpData);
+    await pushImage(bridge, MP_CONTAINER_ID, MP_CONTAINER_NAME, mmData);
   }
 
   if (!isTimerSessionActive(sessionId)) {
@@ -377,8 +385,8 @@ async function clearTimerImages(bridge: any, sessionId: number): Promise<void> {
   debug(`clearTimerImages start session=${sessionId}`);
 
   try {
-    const blankMp = await getBlankBytes('blank-mp', MP_WIDTH, DIGIT_HEIGHT);
-    const blankMss = await getBlankBytes('blank-mss', MSS_WIDTH, DIGIT_HEIGHT);
+    const blankMp = await getBlankBytes('blank-mp', MM_WIDTH, DIGIT_HEIGHT);
+    const blankMss = await getBlankBytes('blank-mss', SS_WIDTH, DIGIT_HEIGHT);
     if (!isPresetSessionActive(sessionId)) {
       debug(`clearTimerImages stale after blank build session=${sessionId}`);
       return;
@@ -482,11 +490,11 @@ export async function createPageContainers(bridge: any, selectedPreset = 5): Pro
     });
     const mpContainer = new ImageContainerProperty({
       containerID: MP_CONTAINER_ID, containerName: MP_CONTAINER_NAME,
-      xPosition: MP_X, yPosition: TIMER_Y, width: MP_WIDTH, height: DIGIT_HEIGHT,
+      xPosition: MM_X, yPosition: TIMER_Y, width: MM_WIDTH, height: DIGIT_HEIGHT,
     });
     const mssContainer = new ImageContainerProperty({
       containerID: MSS_CONTAINER_ID, containerName: MSS_CONTAINER_NAME,
-      xPosition: MSS_X, yPosition: TIMER_Y, width: MSS_WIDTH, height: DIGIT_HEIGHT,
+      xPosition: SS_X, yPosition: TIMER_Y, width: SS_WIDTH, height: DIGIT_HEIGHT,
     });
 
     const result = await bridge.createStartUpPageContainer(

@@ -198,6 +198,15 @@ export class TimerStateManager {
     }
 
     const remaining = Math.max(0, Math.ceil((this.data.endTimestamp - Date.now()) / 1000));
+    if (remaining <= 0) {
+      if (this.data.remainingSeconds !== 0) {
+        this.debug(`syncRemaining ${this.data.remainingSeconds}s -> 0s (complete)`);
+      }
+      this.data.remainingSeconds = 0;
+      this.complete();
+      return;
+    }
+
     if (remaining !== this.data.remainingSeconds) {
       const previous = this.data.remainingSeconds;
       this.data.remainingSeconds = remaining;
@@ -205,10 +214,6 @@ export class TimerStateManager {
       if (this.onUpdateCallback) {
         this.onUpdateCallback();
       }
-    }
-
-    if (remaining <= 0) {
-      this.complete();
     }
   }
 
