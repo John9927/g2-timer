@@ -56,6 +56,10 @@ function average(values: number[]): number {
   return values.reduce((sum, v) => sum + v, 0) / values.length;
 }
 
+function smoothTowards(current: number, target: number, alpha: number): number {
+  return current + (target - current) * alpha;
+}
+
 function updateTelemetrySummary(lastMs: number, reason: RenderReason): void {
   const summaryEl = getTelemetrySummaryEl();
   if (!summaryEl) return;
@@ -77,7 +81,7 @@ function updateTelemetrySummary(lastMs: number, reason: RenderReason): void {
     `Average all (${telemetrySamples.length}): ${toMsText(avgAllMs)}\n` +
     `Average tick (${reference.length}): ${toMsText(avgTickMs)}\n` +
     `Fixed delay est. (tick): ${toMsText(fixedMs)}\n` +
-    `Variable extra: ${toMsText(variableMs)} | Max queue: ${telemetryMaxQueueDepth}`;
+    `Variable extra: ${toMsText(variableMs)} | Lead: ${toMsText(estimatedFixedTickDelayMs)} | Max queue: ${telemetryMaxQueueDepth}`;
 }
 
 function pushTelemetryLog(line: string): void {
@@ -161,11 +165,14 @@ function recordRenderTelemetry(
   const sorted = [...reference].sort((a, b) => a - b);
   const fastBucketCount = Math.max(1, Math.floor(sorted.length * TELEMETRY_FAST_BUCKET_RATIO));
   const fixedMs = average(sorted.slice(0, fastBucketCount));
+  const avgRefMs = average(reference);
   const extraMs = Math.max(0, elapsedMs - fixedMs);
   if (reason === 'tick') {
+    const variableRefMs = Math.max(0, avgRefMs - fixedMs);
+    const targetLeadMs = clamp(fixedMs + variableRefMs * 0.7, DISPLAY_LEAD_MIN_MS, DISPLAY_LEAD_MAX_MS);
     const previousLead = estimatedFixedTickDelayMs;
-    estimatedFixedTickDelayMs = clamp(fixedMs, DISPLAY_LEAD_MIN_MS, DISPLAY_LEAD_MAX_MS);
-    if (Math.abs(previousLead - estimatedFixedTickDelayMs) >= 20) {
+    estimatedFixedTickDelayMs = smoothTowards(previousLead, targetLeadMs, 0.25);
+    if (Math.abs(previousLead - estimatedFixedTickDelayMs) >= 12) {
       pushDetailedLog('[TICKER]', `lead-adjust ${previousLead.toFixed(1)}ms -> ${estimatedFixedTickDelayMs.toFixed(1)}ms`);
     }
   }
