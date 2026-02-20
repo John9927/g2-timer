@@ -101,21 +101,16 @@ function setupRemoteControl() {
     if (state === TimerState.RUNNING) {
       clearRemoteStartPending();
       timerState.toggleStartPause();
-      sendToGlassesImmediate();
-      updateRemoteView();
       return;
     }
     if (state === TimerState.PAUSED) {
       clearRemoteStartPending();
       timerState.toggleStartPause();
-      sendToGlassesImmediate();
-      updateRemoteView();
       return;
     }
     if (state === TimerState.IDLE || state === TimerState.DONE) {
       if (remoteStartScheduledAt !== null) return;
       timerState.start();
-      sendToGlassesImmediate();
       remoteStartScheduledAt = Date.now();
       remoteStartCountdownIntervalId = setInterval(() => updateRemoteView(), REMOTE_START_COUNTDOWN_INTERVAL_MS);
       remoteStartTimeoutId = setTimeout(() => { clearRemoteStartPending(); updateRemoteView(); }, REMOTE_START_DELAY_MS);
@@ -127,8 +122,6 @@ function setupRemoteControl() {
     if (!timerState || !bridge) return;
     clearRemoteStartPending();
     timerState.resetToPreset();
-    sendToGlassesImmediate();
-    updateRemoteView();
   });
 
   presetBtns.forEach(btn => {
@@ -136,8 +129,6 @@ function setupRemoteControl() {
       const min = parseInt((btn as HTMLElement).dataset.preset || '', 10);
       if (!timerState || !bridge || !min) return;
       timerState.setPreset(min);
-      sendToGlassesImmediate();
-      updateRemoteView();
     });
   });
 }
@@ -176,7 +167,7 @@ function setupEventHandlers() {
       if (event.type === 'tap' || event.eventType === 'tap' || event.eventType === 0 || event.eventType === undefined) {
         const taps = event.tapCount || event.taps || 1;
         if (taps === 1) handleSingleTap();
-        else if (taps === 2) { timerState.resetToPreset(); sendToGlassesImmediate(); updateRemoteView(); }
+        else if (taps === 2) { timerState.resetToPreset(); }
       }
     });
   } catch (err) {
@@ -187,8 +178,6 @@ function setupEventHandlers() {
 function handleSingleTap() {
   if (!timerState || !bridge) return;
   timerState.toggleStartPause();
-  sendToGlassesImmediate();
-  updateRemoteView();
 }
 
 function handleSwipe(dir: 1 | -1) {
@@ -197,8 +186,6 @@ function handleSwipe(dir: 1 | -1) {
   if (now - lastSwipeTime < SWIPE_COOLDOWN_MS) return;
   lastSwipeTime = now;
   if (dir === 1) timerState.cyclePreset(); else timerState.cyclePresetBackward();
-  sendToGlassesImmediate();
-  updateRemoteView();
 }
 
 // ── Bootstrap ─────────────────────────────────────────────────────

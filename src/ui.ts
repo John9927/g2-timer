@@ -62,8 +62,9 @@ let lastDisplayedTime = '';
 let lastTextContent = '';
 let areTimerImagesVisible = false;
 let glassesUpdateInFlight = false;
-let pendingUpdate: { bridge: any; seconds: number; forceAll: boolean } | null = null;
+let pendingUpdate: { bridge: any; seconds: number; forceAll: boolean; sessionId: number } | null = null;
 let cacheWarmPromise: Promise<void> | null = null;
+let renderSessionId = 0;
 
 const imageCache = new Map<string, number[]>();
 
@@ -76,6 +77,21 @@ function getContext(): CanvasRenderingContext2D | null {
     ctx = canvas.getContext('2d');
   }
   return ctx;
+}
+
+function startRenderSession(nextScreen: 'preset' | 'timer'): number {
+  renderSessionId++;
+  currentScreenType = nextScreen;
+  pendingUpdate = null;
+  return renderSessionId;
+}
+
+function isTimerSessionActive(sessionId: number): boolean {
+  return currentScreenType === 'timer' && sessionId === renderSessionId;
+}
+
+function isPresetSessionActive(sessionId: number): boolean {
+  return currentScreenType === 'preset' && sessionId === renderSessionId;
 }
 
 export function getTextMetrics(text: string) {
@@ -211,6 +227,9 @@ function pushText(bridge: any, content: string, force = false): void {
 }
 
 async function applyTimerImages(bridge: any, seconds: number, forceAll: boolean): Promise<void> {
+  const sessionId = renderSessionId;
+  if (!isTimerSessionActive(sessionId)) return;
+
   const time = formatTime(seconds);
   const mTens = time[0];
   const mOnes = time[1];
@@ -225,37 +244,46 @@ async function applyTimerImages(bridge: any, seconds: number, forceAll: boolean)
 
   if (needMss) {
     const mssData = await getMssBytes(mOnes, ss);
+    if (!isTimerSessionActive(sessionId)) return;
     await pushImage(bridge, MSS_CONTAINER_ID, MSS_CONTAINER_NAME, mssData);
   }
   if (needMp) {
     const mpData = await getMpBytes(mTens);
+    if (!isTimerSessionActive(sessionId)) return;
     await pushImage(bridge, MP_CONTAINER_ID, MP_CONTAINER_NAME, mpData);
   }
 
+  if (!isTimerSessionActive(sessionId)) return;
   lastDisplayedTime = time;
   areTimerImagesVisible = true;
 
-  if (seconds > 0) {
+  if (seconds > 0 && isTimerSessionActive(sessionId)) {
     prefetchSecond(seconds - 1);
     if (seconds > 1) prefetchSecond(seconds - 2);
   }
 }
 
-export async function updateGlassesTimer(bridge: any, seconds: number, forceAll = false): Promise<void> {
+export async function updateGlassesTimer(bridge: any, seconds: number, forceAll = false, sessionId = renderSessionId): Promise<void> {
+  if (!isTimerSessionActive(sessionId)) return;
+
   if (glassesUpdateInFlight) {
-    pendingUpdate = { bridge, seconds, forceAll: Boolean(pendingUpdate?.forceAll || forceAll) };
+    pendingUpdate = { bridge, seconds, forceAll: Boolean(pendingUpdate?.forceAll || forceAll), sessionId };
     return;
   }
 
   glassesUpdateInFlight = true;
   try {
+    if (!isTimerSessionActive(sessionId)) return;
     await applyTimerImages(bridge, seconds, forceAll);
     if (pendingUpdate) {
       const queued = pendingUpdate;
       pendingUpdate = null;
-      const lastSec = timeStringToSeconds(lastDisplayedTime);
-      if (queued.seconds <= lastSec || queued.forceAll) {
-        await applyTimerImages(queued.bridge, queued.seconds, queued.forceAll);
+
+      if (isTimerSessionActive(queued.sessionId)) {
+        const lastSec = timeStringToSeconds(lastDisplayedTime);
+        if (queued.seconds <= lastSec || queued.forceAll) {
+          await applyTimerImages(queued.bridge, queued.seconds, queued.forceAll);
+        }
       }
     }
   } catch (error) {
@@ -265,17 +293,20 @@ export async function updateGlassesTimer(bridge: any, seconds: number, forceAll 
   }
 }
 
-async function clearTimerImages(bridge: any): Promise<void> {
-  if (!areTimerImagesVisible) return;
-
-  const deadline = Date.now() + 3000;
-  while (glassesUpdateInFlight && Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, 80));
-  }
+async function clearTimerImages(bridge: any, sessionId: number): Promise<void> {
+  if (!isPresetSessionActive(sessionId)) return;
 
   try {
-    await pushImage(bridge, MP_CONTAINER_ID, MP_CONTAINER_NAME, await getBlankBytes('blank-mp', MP_WIDTH, DIGIT_HEIGHT));
-    await pushImage(bridge, MSS_CONTAINER_ID, MSS_CONTAINER_NAME, await getBlankBytes('blank-mss', MSS_WIDTH, DIGIT_HEIGHT));
+    const blankMp = await getBlankBytes('blank-mp', MP_WIDTH, DIGIT_HEIGHT);
+    const blankMss = await getBlankBytes('blank-mss', MSS_WIDTH, DIGIT_HEIGHT);
+    if (!isPresetSessionActive(sessionId)) return;
+
+    await pushImage(bridge, MP_CONTAINER_ID, MP_CONTAINER_NAME, blankMp);
+    if (!isPresetSessionActive(sessionId)) return;
+
+    await pushImage(bridge, MSS_CONTAINER_ID, MSS_CONTAINER_NAME, blankMss);
+    if (!isPresetSessionActive(sessionId)) return;
+
     lastDisplayedTime = '';
     areTimerImagesVisible = false;
   } catch (error) {
@@ -299,21 +330,37 @@ export async function renderUI(
     }
 
     if (state === TimerState.IDLE) {
-      if (currentScreenType !== 'preset') await clearTimerImages(bridge);
+      const switchedFromTimer = currentScreenType !== 'preset';
+      const sessionId = switchedFromTimer ? startRenderSession('preset') : renderSessionId;
+
       pushText(bridge, buildPresetContent(selectedPreset));
-      currentScreenType = 'preset';
+
+      if (switchedFromTimer || areTimerImagesVisible) {
+        void clearTimerImages(bridge, sessionId);
+
+        // A second delayed clear avoids stale timer images when a previous push finishes late.
+        if (switchedFromTimer) {
+          setTimeout(() => {
+            if (isPresetSessionActive(sessionId)) {
+              void clearTimerImages(bridge, sessionId);
+            }
+          }, 140);
+        }
+      }
+
       return;
     }
 
     pushText(bridge, buildTimerOverlayText(state, blinkVisible));
 
+    let sessionId = renderSessionId;
     if (currentScreenType !== 'timer') {
-      currentScreenType = 'timer';
+      sessionId = startRenderSession('timer');
       lastDisplayedTime = '';
-      await updateGlassesTimer(bridge, remainingSeconds, true);
+      await updateGlassesTimer(bridge, remainingSeconds, true, sessionId);
       return;
     }
-    await updateGlassesTimer(bridge, remainingSeconds);
+    await updateGlassesTimer(bridge, remainingSeconds, false, sessionId);
   } catch (error) {
     console.error('[UI] renderUI error:', error);
   }
@@ -347,14 +394,13 @@ export async function createPageContainers(bridge: any, selectedPreset = 5): Pro
       return false;
     }
 
-    currentScreenType = 'preset';
+    startRenderSession('preset');
     lastTextContent = presetContent;
     lastDisplayedTime = '';
     areTimerImagesVisible = false;
-    pendingUpdate = null;
 
     void warmBaseCache();
-    await clearTimerImages(bridge);
+    await clearTimerImages(bridge, renderSessionId);
     return true;
   } catch (error) {
     console.error('[UI] createPageContainers error:', error);
@@ -363,6 +409,8 @@ export async function createPageContainers(bridge: any, selectedPreset = 5): Pro
 }
 
 export function resetPreviousTexts(): void {
+  renderSessionId++;
+  currentScreenType = null;
   lastDisplayedTime = '';
   lastTextContent = '';
   areTimerImagesVisible = false;
