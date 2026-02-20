@@ -92,6 +92,14 @@ export function formatTime(seconds: number): string {
   return `${String(m).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 }
 
+/** Parse "MM:SS" to total seconds (for ordering: lower = later in countdown). */
+function timeStringToSeconds(t: string): number {
+  if (!t || t.length < 5) return 0;
+  const m = parseInt(t.slice(0, 2), 10);
+  const s = parseInt(t.slice(3, 5), 10);
+  return m * 60 + s;
+}
+
 function buildPresetContent(selectedPreset: number): string {
   const minutes = String(Math.min(99, Math.max(0, selectedPreset))).padStart(2, '0');
   const rowA = [1, 3, 5, 10].map(p => p === selectedPreset ? `[${p}]` : `${p}`).join('  ');
@@ -210,7 +218,10 @@ export async function updateGlassesTimer(bridge: any, seconds: number, forceAll 
     if (pendingUpdate) {
       const p = pendingUpdate;
       pendingUpdate = null;
-      await applyTimerImages(p.bridge, p.seconds, p.forceAll);
+      const lastSec = timeStringToSeconds(lastDisplayedTime);
+      if (p.seconds <= lastSec) {
+        await applyTimerImages(p.bridge, p.seconds, p.forceAll);
+      }
     }
   } catch (err) {
     console.error('[UI] glasses update error:', err);
