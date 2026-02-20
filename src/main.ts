@@ -1,6 +1,6 @@
 import { waitForEvenAppBridge } from '@evenrealities/even_hub_sdk';
 import { TimerStateManager } from './timerState';
-import { createPageContainers, renderUI } from './ui';
+import { createPageContainers, renderUI, formatTime } from './ui';
 import { TimerState } from './constants';
 
 const REMOTE_START_DELAY_MS = 3000;
@@ -14,6 +14,91 @@ let isInForeground = true;
 let remoteStartTimeoutId: ReturnType<typeof setTimeout> | null = null;
 let remoteStartCountdownIntervalId: ReturnType<typeof setInterval> | null = null;
 let remoteStartScheduledAt: number | null = null;
+
+type RenderReason = 'tick' | 'state' | 'foreground' | 'manual';
+
+const TELEMETRY_WINDOW_SIZE = 120;
+const TELEMETRY_FAST_BUCKET_RATIO = 0.25;
+const TELEMETRY_LOG_LIMIT = 14;
+
+const telemetrySamples: number[] = [];
+const telemetryLogLines: string[] = [];
+let telemetryInFlightRenders = 0;
+let telemetryMaxQueueDepth = 0;
+
+function getTelemetrySummaryEl(): HTMLElement | null {
+  return document.getElementById('telemetry-summary');
+}
+
+function getTelemetryLogEl(): HTMLElement | null {
+  return document.getElementById('telemetry-log');
+}
+
+function nowTimeLabel(): string {
+  const now = new Date();
+  return now.toLocaleTimeString('it-IT', { hour12: false });
+}
+
+function toMsText(value: number): string {
+  return `${value.toFixed(1)} ms`;
+}
+
+function average(values: number[]): number {
+  if (!values.length) return 0;
+  return values.reduce((sum, v) => sum + v, 0) / values.length;
+}
+
+function updateTelemetrySummary(lastMs: number, reason: RenderReason): void {
+  const summaryEl = getTelemetrySummaryEl();
+  if (!summaryEl) return;
+  if (!telemetrySamples.length) {
+    summaryEl.textContent = 'Waiting for samples...';
+    return;
+  }
+
+  const avgMs = average(telemetrySamples);
+  const sorted = [...telemetrySamples].sort((a, b) => a - b);
+  const fastBucketCount = Math.max(1, Math.floor(sorted.length * TELEMETRY_FAST_BUCKET_RATIO));
+  const fixedMs = average(sorted.slice(0, fastBucketCount));
+  const variableMs = Math.max(0, avgMs - fixedMs);
+
+  summaryEl.textContent =
+    `Last (${reason}): ${toMsText(lastMs)}\n` +
+    `Average (${telemetrySamples.length}): ${toMsText(avgMs)}\n` +
+    `Fixed delay est.: ${toMsText(fixedMs)}\n` +
+    `Variable extra: ${toMsText(variableMs)} | Max queue: ${telemetryMaxQueueDepth}`;
+}
+
+function pushTelemetryLog(line: string): void {
+  telemetryLogLines.unshift(`[${nowTimeLabel()}] ${line}`);
+  if (telemetryLogLines.length > TELEMETRY_LOG_LIMIT) telemetryLogLines.length = TELEMETRY_LOG_LIMIT;
+  const logEl = getTelemetryLogEl();
+  if (logEl) logEl.textContent = telemetryLogLines.join('\n');
+}
+
+function recordRenderTelemetry(
+  reason: RenderReason,
+  elapsedMs: number,
+  queueDepth: number,
+  state: TimerState,
+  remainingSeconds: number,
+): void {
+  telemetrySamples.push(elapsedMs);
+  if (telemetrySamples.length > TELEMETRY_WINDOW_SIZE) telemetrySamples.shift();
+  if (queueDepth > telemetryMaxQueueDepth) telemetryMaxQueueDepth = queueDepth;
+
+  updateTelemetrySummary(elapsedMs, reason);
+
+  const sorted = [...telemetrySamples].sort((a, b) => a - b);
+  const fastBucketCount = Math.max(1, Math.floor(sorted.length * TELEMETRY_FAST_BUCKET_RATIO));
+  const fixedMs = average(sorted.slice(0, fastBucketCount));
+  const extraMs = Math.max(0, elapsedMs - fixedMs);
+
+  pushTelemetryLog(
+    `${reason.toUpperCase()} ${toMsText(elapsedMs)} (fixed ${toMsText(fixedMs)}, extra ${toMsText(extraMs)}, q ${queueDepth}) ` +
+    `${state} ${formatTime(remainingSeconds)}`,
+  );
+}
 
 // ── Phone UI ──────────────────────────────────────────────────────
 function clearRemoteStartPending() {
@@ -66,26 +151,58 @@ function updateRemoteView() {
 
 // ── Fire-and-forget glasses render (never awaited, never blocks) ──
 // Send every tick so display updates every 1s; overlapping pushes allowed.
-function sendToGlasses() {
+function sendToGlasses(reason: RenderReason = 'tick') {
   if (!isInForeground || !bridge || !timerState) return;
+  const state = timerState.getState();
+  const selectedPreset = timerState.getSelectedPreset();
+  const remainingSeconds = timerState.getRemainingSeconds();
+  const blinkVisibility = timerState.getBlinkVisibility();
+  const startedAt = performance.now();
+  telemetryInFlightRenders++;
+  const queueDepth = telemetryInFlightRenders;
+
   renderUI(
     bridge,
-    timerState.getState(),
-    timerState.getSelectedPreset(),
-    timerState.getRemainingSeconds(),
-    timerState.getBlinkVisibility(),
-  ).catch(err => console.error('[Timer] renderUI:', err));
+    state,
+    selectedPreset,
+    remainingSeconds,
+    blinkVisibility,
+  ).then(() => {
+    const elapsedMs = performance.now() - startedAt;
+    recordRenderTelemetry(reason, elapsedMs, queueDepth, state, remainingSeconds);
+  }).catch(err => {
+    pushTelemetryLog(`ERR ${reason.toUpperCase()} ${String(err)}`);
+    console.error('[Timer] renderUI:', err);
+  }).finally(() => {
+    telemetryInFlightRenders = Math.max(0, telemetryInFlightRenders - 1);
+  });
 }
 
-function sendToGlassesImmediate() {
+function sendToGlassesImmediate(reason: RenderReason = 'manual') {
   if (!bridge || !timerState) return;
+  const state = timerState.getState();
+  const selectedPreset = timerState.getSelectedPreset();
+  const remainingSeconds = timerState.getRemainingSeconds();
+  const blinkVisibility = timerState.getBlinkVisibility();
+  const startedAt = performance.now();
+  telemetryInFlightRenders++;
+  const queueDepth = telemetryInFlightRenders;
+
   renderUI(
     bridge,
-    timerState.getState(),
-    timerState.getSelectedPreset(),
-    timerState.getRemainingSeconds(),
-    timerState.getBlinkVisibility(),
-  ).catch(err => console.error('[Timer] renderUI:', err));
+    state,
+    selectedPreset,
+    remainingSeconds,
+    blinkVisibility,
+  ).then(() => {
+    const elapsedMs = performance.now() - startedAt;
+    recordRenderTelemetry(reason, elapsedMs, queueDepth, state, remainingSeconds);
+  }).catch(err => {
+    pushTelemetryLog(`ERR ${reason.toUpperCase()} ${String(err)}`);
+    console.error('[Timer] renderUI:', err);
+  }).finally(() => {
+    telemetryInFlightRenders = Math.max(0, telemetryInFlightRenders - 1);
+  });
 }
 
 // ── Remote control buttons ────────────────────────────────────────
@@ -156,7 +273,7 @@ function setupEventHandlers() {
         if (event.eventType === 'enterForeground') {
           isInForeground = true;
           timerState?.handleForeground();
-          sendToGlassesImmediate();
+          sendToGlassesImmediate('foreground');
         } else if (event.eventType === 'exitForeground') {
           isInForeground = false;
           timerState?.handleBackground();
@@ -212,13 +329,13 @@ async function init() {
     // Every timer tick: phone UI updates instantly, glasses get a render if idle
     timerState.setOnUpdate(() => {
       updateRemoteView();
-      sendToGlasses();
+      sendToGlasses('tick');
     });
 
     // State transitions (start/pause/done): always push to glasses immediately
     timerState.setOnStateChange(() => {
       updateRemoteView();
-      sendToGlassesImmediate();
+      sendToGlassesImmediate('state');
     });
 
     const ok = await createPageContainers(bridge, timerState.getSelectedPreset());

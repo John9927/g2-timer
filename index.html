@@ -166,6 +166,35 @@
       #remote-status.error {
         color: var(--danger);
       }
+      #telemetry-card label {
+        display: block;
+        font-size: 0.72rem;
+        font-weight: 600;
+        color: var(--text-muted);
+        margin-bottom: 8px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      #telemetry-summary {
+        font-size: 0.78rem;
+        color: var(--text-muted);
+        line-height: 1.45;
+        min-height: 54px;
+      }
+      #telemetry-log {
+        margin-top: 10px;
+        padding: 10px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--bg-subtle);
+        color: var(--text);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 0.68rem;
+        line-height: 1.4;
+        max-height: 132px;
+        overflow-y: auto;
+        white-space: pre-wrap;
+      }
     </style>
   </head>
   <body>
@@ -190,6 +219,11 @@
           <button type="button" id="btn-start-pause" disabled>Start</button>
           <button type="button" id="btn-reset" disabled>Cancel / Reset</button>
         </div>
+      </div>
+      <div class="card" id="telemetry-card">
+        <label>Telemetry (phone)</label>
+        <div id="telemetry-summary">Waiting for samples...</div>
+        <div id="telemetry-log">No render samples yet.</div>
       </div>
       <p id="remote-status">Connecting...</p>
     </div>
