@@ -5,12 +5,15 @@ import { TimerState } from './constants';
 
 const REMOTE_START_DELAY_MS = 3000;
 const REMOTE_START_COUNTDOWN_INTERVAL_MS = 1000;
+/** Throttle glasses updates to avoid blocking phone and spare glasses memory */
+const GLASSES_UPDATE_INTERVAL_MS = 2000;
 
 let bridge: any = null;
 let timerState: TimerStateManager | null = null;
 let isInitialized = false;
 let isInForeground = true;
 let renderUIInProgress = false;
+let lastGlassesUpdateTime = 0;
 let remoteStartTimeoutId: ReturnType<typeof setTimeout> | null = null;
 let remoteStartCountdownIntervalId: ReturnType<typeof setInterval> | null = null;
 let remoteStartScheduledAt: number | null = null;
@@ -190,11 +193,12 @@ async function init() {
     timerState = new TimerStateManager();
     setupRemoteControl();
 
-    // Set up update callback (called every second when running)
-    // Only one render at a time so glasses don't block; when done, send current time to stay in sync
-    function scheduleGlassesUpdate() {
-      if (!isInForeground || !bridge || !timerState) return;
-      if (renderUIInProgress) return;
+    // Timer tick: keep phone UI instant; send to glasses at most every GLASSES_UPDATE_INTERVAL_MS
+    timerState.setOnUpdate(() => {
+      updateRemoteView();
+      if (!isInForeground || !bridge || !timerState || renderUIInProgress) return;
+      if (Date.now() - lastGlassesUpdateTime < GLASSES_UPDATE_INTERVAL_MS) return;
+      lastGlassesUpdateTime = Date.now();
       renderUIInProgress = true;
       renderUI(
         bridge,
@@ -206,18 +210,14 @@ async function init() {
         .catch((err) => console.error('[Timer] renderUI:', err))
         .finally(() => {
           renderUIInProgress = false;
-          if (timerState?.getState() === TimerState.RUNNING) scheduleGlassesUpdate();
         });
-    }
-    timerState.setOnUpdate(() => {
-      updateRemoteView();
-      scheduleGlassesUpdate();
     });
 
-    // Set up state change callback (called when state changes)
     timerState.setOnStateChange(() => {
       updateRemoteView();
       if (!isInForeground || !bridge || !timerState) return;
+      if (renderUIInProgress) return;
+      lastGlassesUpdateTime = Date.now();
       renderUIInProgress = true;
       renderUI(
         bridge,
