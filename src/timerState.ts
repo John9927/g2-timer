@@ -5,6 +5,7 @@ export interface TimerStateData {
   selectedPreset: number; // minutes
   remainingSeconds: number;
   intervalId: number | null;
+  endTimestamp: number | null;
   blinkIntervalId: number | null;
   blinkStartTime: number | null;
   isBlinkingVisible: boolean;
@@ -16,6 +17,7 @@ export class TimerStateManager {
     selectedPreset: 5, // Default to 5 minutes
     remainingSeconds: 5 * 60,
     intervalId: null,
+    endTimestamp: null,
     blinkIntervalId: null,
     blinkStartTime: null,
     isBlinkingVisible: true,
@@ -60,9 +62,6 @@ export class TimerStateManager {
     const nextIndex = (currentIndex + 1) % PRESETS.length;
     this.data.selectedPreset = PRESETS[nextIndex];
     this.resetToPreset();
-    if (this.onStateChangeCallback) {
-      this.onStateChangeCallback();
-    }
   }
 
   cyclePresetBackward(): void {
@@ -70,9 +69,6 @@ export class TimerStateManager {
     const prevIndex = currentIndex === 0 ? PRESETS.length - 1 : currentIndex - 1;
     this.data.selectedPreset = PRESETS[prevIndex];
     this.resetToPreset();
-    if (this.onStateChangeCallback) {
-      this.onStateChangeCallback();
-    }
   }
 
   /** Set preset directly (only values in PRESETS). */
@@ -80,15 +76,13 @@ export class TimerStateManager {
     if (PRESETS.includes(minutes as (typeof PRESETS)[number])) {
       this.data.selectedPreset = minutes;
       this.resetToPreset();
-      if (this.onStateChangeCallback) {
-        this.onStateChangeCallback();
-      }
     }
   }
 
   resetToPreset(): void {
     this.stopInterval();
     this.stopBlink();
+    this.data.endTimestamp = null;
     this.data.remainingSeconds = this.data.selectedPreset * 60;
     this.data.state = TimerState.IDLE;
     if (this.onStateChangeCallback) {
@@ -102,6 +96,7 @@ export class TimerStateManager {
     }
     if (this.data.state === TimerState.IDLE || this.data.state === TimerState.PAUSED) {
       this.data.state = TimerState.RUNNING;
+      this.data.endTimestamp = Date.now() + this.data.remainingSeconds * 1000;
       this.startInterval();
       if (this.onStateChangeCallback) {
         this.onStateChangeCallback();
@@ -111,7 +106,12 @@ export class TimerStateManager {
 
   pause(): void {
     if (this.data.state === TimerState.RUNNING) {
+      this.syncRemainingWithClock();
+      if (this.data.state !== TimerState.RUNNING) {
+        return;
+      }
       this.data.state = TimerState.PAUSED;
+      this.data.endTimestamp = null;
       this.stopInterval();
       if (this.onStateChangeCallback) {
         this.onStateChangeCallback();
@@ -130,15 +130,8 @@ export class TimerStateManager {
   private startInterval(): void {
     this.stopInterval();
     this.data.intervalId = window.setInterval(() => {
-      if (this.data.remainingSeconds > 0) {
-        this.data.remainingSeconds--;
-        if (this.onUpdateCallback) {
-          this.onUpdateCallback();
-        }
-      } else {
-        this.complete();
-      }
-    }, UPDATE_INTERVAL_MS);
+      this.syncRemainingWithClock();
+    }, Math.max(UPDATE_INTERVAL_MS / 4, 200));
   }
 
   private stopInterval(): void {
@@ -151,10 +144,29 @@ export class TimerStateManager {
   private complete(): void {
     this.stopInterval();
     this.data.state = TimerState.DONE;
+    this.data.endTimestamp = null;
     this.data.remainingSeconds = 0;
     this.startBlink();
     if (this.onStateChangeCallback) {
       this.onStateChangeCallback();
+    }
+  }
+
+  private syncRemainingWithClock(): void {
+    if (this.data.state !== TimerState.RUNNING || this.data.endTimestamp === null) {
+      return;
+    }
+
+    const remaining = Math.max(0, Math.ceil((this.data.endTimestamp - Date.now()) / 1000));
+    if (remaining !== this.data.remainingSeconds) {
+      this.data.remainingSeconds = remaining;
+      if (this.onUpdateCallback) {
+        this.onUpdateCallback();
+      }
+    }
+
+    if (remaining <= 0) {
+      this.complete();
     }
   }
 
@@ -192,14 +204,12 @@ export class TimerStateManager {
   // Handle foreground/background lifecycle
   handleForeground(): void {
     if (this.data.state === TimerState.RUNNING) {
-      // Restart interval if we were running
       this.startInterval();
+      this.syncRemainingWithClock();
     }
   }
 
   handleBackground(): void {
-    // Stop interval when going to background
-    // State is preserved, interval will restart on foreground
     this.stopInterval();
   }
 }
