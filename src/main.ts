@@ -1,135 +1,123 @@
 import { waitForEvenAppBridge } from '@evenrealities/even_hub_sdk';
 import { TimerStateManager } from './timerState';
-import { createPageContainers, renderUI } from './ui';
+import { createPageContainers, renderUI, isGlassesBusy } from './ui';
 import { TimerState } from './constants';
 
 const REMOTE_START_DELAY_MS = 3000;
 const REMOTE_START_COUNTDOWN_INTERVAL_MS = 1000;
-/** Throttle glasses updates to avoid blocking phone and spare glasses memory */
-const GLASSES_UPDATE_INTERVAL_MS = 2000;
 
 let bridge: any = null;
 let timerState: TimerStateManager | null = null;
 let isInitialized = false;
 let isInForeground = true;
-let renderUIInProgress = false;
-let lastGlassesUpdateTime = 0;
+
 let remoteStartTimeoutId: ReturnType<typeof setTimeout> | null = null;
 let remoteStartCountdownIntervalId: ReturnType<typeof setInterval> | null = null;
 let remoteStartScheduledAt: number | null = null;
 
+// ── Phone UI ──────────────────────────────────────────────────────
 function clearRemoteStartPending() {
-  if (remoteStartTimeoutId !== null) {
-    clearTimeout(remoteStartTimeoutId);
-    remoteStartTimeoutId = null;
-  }
-  if (remoteStartCountdownIntervalId !== null) {
-    clearInterval(remoteStartCountdownIntervalId);
-    remoteStartCountdownIntervalId = null;
-  }
+  if (remoteStartTimeoutId !== null) { clearTimeout(remoteStartTimeoutId); remoteStartTimeoutId = null; }
+  if (remoteStartCountdownIntervalId !== null) { clearInterval(remoteStartCountdownIntervalId); remoteStartCountdownIntervalId = null; }
   remoteStartScheduledAt = null;
 }
 
 function updateRemoteView() {
-  const remoteStatus = document.getElementById('remote-status');
-  const btnStartPause = document.getElementById('btn-start-pause') as HTMLButtonElement | null;
+  const status = document.getElementById('remote-status');
+  const btnStart = document.getElementById('btn-start-pause') as HTMLButtonElement | null;
   const btnReset = document.getElementById('btn-reset') as HTMLButtonElement | null;
-  const presetButtons = document.querySelectorAll('#remote-preset-buttons .preset-btn');
+  const presetBtns = document.querySelectorAll('#remote-preset-buttons .preset-btn');
 
   const connected = !!(bridge && timerState);
-  if (remoteStatus) {
-    remoteStatus.textContent = connected
+  if (status) {
+    status.textContent = connected
       ? (isInitialized ? 'Connected – display ready' : 'Connected – initializing...')
       : 'Connecting...';
-    remoteStatus.className = connected ? 'connected' : '';
+    status.className = connected ? 'connected' : '';
   }
 
-  const isPendingStart = remoteStartScheduledAt !== null;
+  const pending = remoteStartScheduledAt !== null;
 
   if (timerState) {
     const preset = timerState.getSelectedPreset();
-    presetButtons.forEach((btn) => {
-      const p = parseInt((btn as HTMLElement).dataset.preset || '', 10);
-      btn.classList.toggle('selected', p === preset);
-      (btn as HTMLButtonElement).disabled = !connected || isPendingStart;
+    presetBtns.forEach(b => {
+      const p = parseInt((b as HTMLElement).dataset.preset || '', 10);
+      b.classList.toggle('selected', p === preset);
+      (b as HTMLButtonElement).disabled = !connected || pending;
     });
-
-    if (btnStartPause) {
-      btnStartPause.disabled = !connected;
-      const isRunning = timerState.getState() === TimerState.RUNNING;
-      if (isPendingStart) {
-        btnStartPause.textContent = 'Please wait…';
-        btnStartPause.classList.remove('pause-mode');
+    if (btnStart) {
+      btnStart.disabled = !connected;
+      const running = timerState.getState() === TimerState.RUNNING;
+      if (pending) {
+        btnStart.textContent = 'Please wait\u2026';
+        btnStart.classList.remove('pause-mode');
       } else {
-        btnStartPause.textContent = isRunning ? 'Pause' : 'Start';
-        btnStartPause.classList.toggle('pause-mode', isRunning);
+        btnStart.textContent = running ? 'Pause' : 'Start';
+        btnStart.classList.toggle('pause-mode', running);
       }
     }
     if (btnReset) btnReset.disabled = !connected;
   } else {
-    presetButtons.forEach((btn) => {
-      btn.classList.remove('selected');
-      (btn as HTMLButtonElement).disabled = true;
-    });
-    if (btnStartPause) { btnStartPause.disabled = true; btnStartPause.textContent = 'Start'; }
+    presetBtns.forEach(b => { b.classList.remove('selected'); (b as HTMLButtonElement).disabled = true; });
+    if (btnStart) { btnStart.disabled = true; btnStart.textContent = 'Start'; }
     if (btnReset) btnReset.disabled = true;
   }
 }
 
-function setupRemoteControl() {
-  const btnStartPause = document.getElementById('btn-start-pause');
-  const btnReset = document.getElementById('btn-reset');
-  const presetButtons = document.querySelectorAll('#remote-preset-buttons .preset-btn');
+// ── Fire-and-forget glasses render (never awaited, never blocks) ──
+function sendToGlasses() {
+  if (!isInForeground || !bridge || !timerState || isGlassesBusy()) return;
+  renderUI(
+    bridge,
+    timerState.getState(),
+    timerState.getSelectedPreset(),
+    timerState.getRemainingSeconds(),
+    timerState.getBlinkVisibility(),
+  ).catch(err => console.error('[Timer] renderUI:', err));
+}
 
-  btnStartPause?.addEventListener('click', () => {
+function sendToGlassesImmediate() {
+  if (!bridge || !timerState) return;
+  renderUI(
+    bridge,
+    timerState.getState(),
+    timerState.getSelectedPreset(),
+    timerState.getRemainingSeconds(),
+    timerState.getBlinkVisibility(),
+  ).catch(err => console.error('[Timer] renderUI:', err));
+}
+
+// ── Remote control buttons ────────────────────────────────────────
+function setupRemoteControl() {
+  const btnStart = document.getElementById('btn-start-pause');
+  const btnReset = document.getElementById('btn-reset');
+  const presetBtns = document.querySelectorAll('#remote-preset-buttons .preset-btn');
+
+  btnStart?.addEventListener('click', () => {
     if (!timerState || !bridge) return;
     const state = timerState.getState();
 
     if (state === TimerState.RUNNING) {
       clearRemoteStartPending();
       timerState.toggleStartPause();
-      renderUI(
-        bridge,
-        timerState.getState(),
-        timerState.getSelectedPreset(),
-        timerState.getRemainingSeconds(),
-        timerState.getBlinkVisibility()
-      ).catch((err) => console.error('Error rendering:', err));
+      sendToGlassesImmediate();
       updateRemoteView();
       return;
     }
-
     if (state === TimerState.PAUSED) {
       clearRemoteStartPending();
       timerState.toggleStartPause();
-      renderUI(
-        bridge,
-        timerState.getState(),
-        timerState.getSelectedPreset(),
-        timerState.getRemainingSeconds(),
-        timerState.getBlinkVisibility()
-      ).catch((err) => console.error('Error rendering:', err));
+      sendToGlassesImmediate();
       updateRemoteView();
       return;
     }
-
     if (state === TimerState.IDLE || state === TimerState.DONE) {
       if (remoteStartScheduledAt !== null) return;
-      // Start immediately on glasses so they render right away; phone shows countdown delay
       timerState.start();
-      renderUI(
-        bridge,
-        timerState.getState(),
-        timerState.getSelectedPreset(),
-        timerState.getRemainingSeconds(),
-        timerState.getBlinkVisibility()
-      ).catch((err) => console.error('Error rendering:', err));
+      sendToGlassesImmediate();
       remoteStartScheduledAt = Date.now();
       remoteStartCountdownIntervalId = setInterval(() => updateRemoteView(), REMOTE_START_COUNTDOWN_INTERVAL_MS);
-      remoteStartTimeoutId = setTimeout(() => {
-        clearRemoteStartPending();
-        updateRemoteView();
-      }, REMOTE_START_DELAY_MS);
+      remoteStartTimeoutId = setTimeout(() => { clearRemoteStartPending(); updateRemoteView(); }, REMOTE_START_DELAY_MS);
       updateRemoteView();
     }
   });
@@ -138,52 +126,92 @@ function setupRemoteControl() {
     if (!timerState || !bridge) return;
     clearRemoteStartPending();
     timerState.resetToPreset();
-    renderUI(
-      bridge,
-      timerState.getState(),
-      timerState.getSelectedPreset(),
-      timerState.getRemainingSeconds(),
-      timerState.getBlinkVisibility()
-    ).catch((err) => console.error('Error rendering:', err));
+    sendToGlassesImmediate();
     updateRemoteView();
   });
 
-  presetButtons.forEach((btn) => {
+  presetBtns.forEach(btn => {
     btn.addEventListener('click', () => {
-      const minutes = parseInt((btn as HTMLElement).dataset.preset || '', 10);
-      if (!timerState || !bridge || !minutes) return;
-      timerState.setPreset(minutes);
-      renderUI(
-        bridge,
-        timerState.getState(),
-        timerState.getSelectedPreset(),
-        timerState.getRemainingSeconds(),
-        timerState.getBlinkVisibility()
-      ).catch((err) => console.error('Error rendering:', err));
+      const min = parseInt((btn as HTMLElement).dataset.preset || '', 10);
+      if (!timerState || !bridge || !min) return;
+      timerState.setPreset(min);
+      sendToGlassesImmediate();
       updateRemoteView();
     });
   });
 }
 
-// Initialize the app
+// ── Swipe throttling ──────────────────────────────────────────────
+let lastSwipeTime = 0;
+const SWIPE_COOLDOWN_MS = 300;
+
+// ── Event handlers for glasses ────────────────────────────────────
+function setupEventHandlers() {
+  if (!bridge) return;
+  try {
+    bridge.onEvenHubEvent((event: any) => {
+      if (!timerState || !isInForeground) return;
+      console.log('Even Hub event:', event);
+
+      if (event.textEvent) {
+        const evType = event.textEvent.eventType;
+        if (evType === 1) { handleSwipe(1); return; }
+        if (evType === 2) { handleSwipe(-1); return; }
+        if (evType === 0 || evType === undefined) { handleSingleTap(); return; }
+      }
+
+      if (event.type === 'sysEvent') {
+        if (event.eventType === 'enterForeground') {
+          isInForeground = true;
+          timerState?.handleForeground();
+          sendToGlassesImmediate();
+        } else if (event.eventType === 'exitForeground') {
+          isInForeground = false;
+          timerState?.handleBackground();
+        }
+        return;
+      }
+
+      if (event.type === 'tap' || event.eventType === 'tap' || event.eventType === 0 || event.eventType === undefined) {
+        const taps = event.tapCount || event.taps || 1;
+        if (taps === 1) handleSingleTap();
+        else if (taps === 2) { timerState.resetToPreset(); sendToGlassesImmediate(); updateRemoteView(); }
+      }
+    });
+  } catch (err) {
+    console.error('Error setting up event handlers:', err);
+  }
+}
+
+function handleSingleTap() {
+  if (!timerState || !bridge) return;
+  timerState.toggleStartPause();
+  sendToGlassesImmediate();
+  updateRemoteView();
+}
+
+function handleSwipe(dir: 1 | -1) {
+  if (!timerState || !bridge) return;
+  const now = Date.now();
+  if (now - lastSwipeTime < SWIPE_COOLDOWN_MS) return;
+  lastSwipeTime = now;
+  if (dir === 1) timerState.cyclePreset(); else timerState.cyclePresetBackward();
+  sendToGlassesImmediate();
+  updateRemoteView();
+}
+
+// ── Bootstrap ─────────────────────────────────────────────────────
 async function init() {
   try {
     updateRemoteView();
     bridge = await waitForEvenAppBridge();
-    console.log('[Boot] ✅ Bridge received');
-    console.log('[Boot] 📊 Bridge available:', !!bridge);
-    if (bridge) {
-      console.log('[Boot] 📊 Bridge methods:', Object.keys(bridge || {}));
-    }
+    console.log('[Boot] Bridge received');
     updateRemoteView();
 
     if (!bridge) {
-      console.error('[Boot] ❌ Bridge not available!');
-      const remoteStatus = document.getElementById('remote-status');
-      if (remoteStatus) {
-        remoteStatus.textContent = 'Connection unavailable';
-        remoteStatus.className = 'error';
-      }
+      console.error('[Boot] Bridge not available');
+      const s = document.getElementById('remote-status');
+      if (s) { s.textContent = 'Connection unavailable'; s.className = 'error'; }
       timerState = new TimerStateManager();
       setupRemoteControl();
       updateRemoteView();
@@ -193,262 +221,44 @@ async function init() {
     timerState = new TimerStateManager();
     setupRemoteControl();
 
-    // Timer tick: keep phone UI instant; send to glasses at most every GLASSES_UPDATE_INTERVAL_MS
+    // Every timer tick: phone UI updates instantly, glasses get a render if idle
     timerState.setOnUpdate(() => {
       updateRemoteView();
-      if (!isInForeground || !bridge || !timerState || renderUIInProgress) return;
-      if (Date.now() - lastGlassesUpdateTime < GLASSES_UPDATE_INTERVAL_MS) return;
-      lastGlassesUpdateTime = Date.now();
-      renderUIInProgress = true;
-      renderUI(
-        bridge,
-        timerState.getState(),
-        timerState.getSelectedPreset(),
-        timerState.getRemainingSeconds(),
-        timerState.getBlinkVisibility()
-      )
-        .catch((err) => console.error('[Timer] renderUI:', err))
-        .finally(() => {
-          renderUIInProgress = false;
-        });
+      sendToGlasses();
     });
 
+    // State transitions (start/pause/done): always push to glasses immediately
     timerState.setOnStateChange(() => {
       updateRemoteView();
-      if (!isInForeground || !bridge || !timerState) return;
-      if (renderUIInProgress) return;
-      lastGlassesUpdateTime = Date.now();
-      renderUIInProgress = true;
-      renderUI(
-        bridge,
-        timerState.getState(),
-        timerState.getSelectedPreset(),
-        timerState.getRemainingSeconds(),
-        timerState.getBlinkVisibility()
-      )
-        .catch((err) => console.error('[Timer] renderUI:', err))
-        .finally(() => {
-          renderUIInProgress = false;
-        });
+      sendToGlassesImmediate();
     });
 
-    // Create page containers once - show preset selection initially
-    const containersCreated = await createPageContainers(bridge, timerState.getSelectedPreset());
-    if (!containersCreated) {
+    const ok = await createPageContainers(bridge, timerState.getSelectedPreset());
+    if (!ok) {
       console.error('Failed to create page containers');
-      if (bridge) {
-        await renderUI(bridge, TimerState.IDLE, 5, 300, true, 'ERROR: container creation failed');
-      }
-      const remoteStatus = document.getElementById('remote-status');
-      if (remoteStatus) {
-        remoteStatus.textContent = 'Display creation error';
-        remoteStatus.className = 'error';
-      }
+      await renderUI(bridge, TimerState.IDLE, 5, 300, true, 'ERROR: container creation failed');
+      const s = document.getElementById('remote-status');
+      if (s) { s.textContent = 'Display creation error'; s.className = 'error'; }
       return;
     }
 
     setupEventHandlers();
-    await renderUI(
-      bridge,
-      TimerState.IDLE,
-      timerState.getSelectedPreset(),
-      timerState.getRemainingSeconds(),
-      timerState.getBlinkVisibility()
-    );
+    await renderUI(bridge, TimerState.IDLE, timerState.getSelectedPreset(), timerState.getRemainingSeconds(), true);
     isInitialized = true;
     updateRemoteView();
-  } catch (error) {
-    console.error('Failed to initialize Even Hub app:', error);
-    const remoteStatus = document.getElementById('remote-status');
-    if (remoteStatus) {
-      remoteStatus.textContent = `Error: ${error}`;
-      remoteStatus.className = 'error';
-    }
+  } catch (err) {
+    console.error('Failed to initialize:', err);
+    const s = document.getElementById('remote-status');
+    if (s) { s.textContent = `Error: ${err}`; s.className = 'error'; }
   }
 }
 
-// Swipe throttling to prevent rapid duplicate events
-let lastSwipeTime = 0;
-const SWIPE_COOLDOWN_MS = 300; // 300ms cooldown between swipes
-
-// Set up event handlers for taps and system events
-function setupEventHandlers() {
-  if (!bridge) return;
-
-  try {
-    bridge.onEvenHubEvent((event: any) => {
-      if (!timerState || !isInForeground) return;
-
-      console.log('Even Hub event:', event);
-      
-      // Handle text container events (swipes come as SCROLL_TOP/SCROLL_BOTTOM events)
-      // According to docs: SCROLL_TOP_EVENT (1) = swipe forward, SCROLL_BOTTOM_EVENT (2) = swipe back
-      if (event.textEvent) {
-        const textEvent = event.textEvent;
-        const eventType = textEvent.eventType;
-        
-        console.log('Text event detected:', { eventType, textEvent });
-        
-        // SCROLL_TOP_EVENT = 1 (swipe forward/up) = next preset
-        // SCROLL_BOTTOM_EVENT = 2 (swipe back/down) = previous preset
-        if (eventType === 1) {
-          // Swipe forward/up: next preset
-          console.log('SCROLL_TOP detected - swipe forward');
-          handleSwipeRight().catch(err => console.error('Error handling swipe right:', err));
-        } else if (eventType === 2) {
-          // Swipe back/down: previous preset
-          console.log('SCROLL_BOTTOM detected - swipe back');
-          handleSwipeLeft().catch(err => console.error('Error handling swipe left:', err));
-        }
-      }
-
-      // Handle system events (foreground/background)
-      if (event.type === 'sysEvent') {
-        if (event.eventType === 'enterForeground') {
-          isInForeground = true;
-          if (timerState) {
-            timerState.handleForeground();
-            renderUI(
-              bridge,
-              timerState.getState(),
-              timerState.getSelectedPreset(),
-              timerState.getRemainingSeconds(),
-              timerState.getBlinkVisibility()
-            ).catch(err => console.error('Error rendering:', err));
-          }
-        } else if (event.eventType === 'exitForeground') {
-          isInForeground = false;
-          if (timerState) {
-            timerState.handleBackground();
-          }
-        }
-        return;
-      }
-
-      // Handle tap events (CLICK_EVENT = 0, but SDK normalizes 0 to undefined)
-      // Single tap should start/pause timer, NOT change preset
-      // Check both textEvent and direct eventType
-      if (event.textEvent) {
-        const textEvent = event.textEvent;
-        const eventType = textEvent.eventType;
-        
-        // CLICK_EVENT = 0, but SDK may normalize to undefined
-        // Only handle single clicks here (not scroll events)
-        if (eventType === 0 || eventType === undefined) {
-          const containerID = textEvent.containerID;
-          console.log('Click event detected:', { containerID, textEvent });
-          // Single tap: start/pause timer
-          handleSingleTap();
-        }
-      } else if (event.type === 'tap' || event.eventType === 'tap' || event.eventType === 0 || event.eventType === undefined) {
-        const tapCount = event.tapCount || event.taps || 1;
-
-        // Single tap: start/pause timer
-        if (tapCount === 1) {
-          handleSingleTap();
-        } else if (tapCount === 2) {
-          // Double tap: reset timer
-          if (timerState) {
-            timerState.resetToPreset();
-            if (bridge) {
-              renderUI(
-                bridge,
-                timerState.getState(),
-                timerState.getSelectedPreset(),
-                timerState.getRemainingSeconds(),
-                timerState.getBlinkVisibility()
-              );
-            }
-            updateRemoteView();
-          }
-        }
-      }
-
-    });
-  } catch (error) {
-    console.error('Error setting up event handlers:', error);
-  }
-}
-
-// Handle single tap: start/pause timer
-async function handleSingleTap() {
-  if (!timerState || !bridge) return;
-  
-  console.log('Single tap: start/pause timer');
-  timerState.toggleStartPause();
-  await renderUI(
-    bridge,
-    timerState.getState(),
-    timerState.getSelectedPreset(),
-    timerState.getRemainingSeconds(),
-    timerState.getBlinkVisibility()
-  );
-  updateRemoteView();
-}
-
-// Handle swipe right: next preset (SCROLL_TOP_EVENT = 1)
-async function handleSwipeRight() {
-  if (!timerState || !bridge) return;
-  
-  // Throttle swipes to prevent rapid duplicate events
-  const now = Date.now();
-  if (now - lastSwipeTime < SWIPE_COOLDOWN_MS) {
-    console.log('Swipe throttled');
-    return;
-  }
-  lastSwipeTime = now;
-  
-  timerState.cyclePreset();
-
-  await renderUI(
-    bridge,
-    timerState.getState(),
-    timerState.getSelectedPreset(),
-    timerState.getRemainingSeconds(),
-    timerState.getBlinkVisibility()
-  );
-  updateRemoteView();
-}
-
-// Handle swipe left: previous preset (SCROLL_BOTTOM_EVENT = 2)
-async function handleSwipeLeft() {
-  if (!timerState || !bridge) return;
-  
-  // Throttle swipes to prevent rapid duplicate events
-  const now = Date.now();
-  if (now - lastSwipeTime < SWIPE_COOLDOWN_MS) {
-    console.log('Swipe throttled');
-    return;
-  }
-  lastSwipeTime = now;
-  
-  timerState.cyclePresetBackward();
-
-  await renderUI(
-    bridge,
-    timerState.getState(),
-    timerState.getSelectedPreset(),
-    timerState.getRemainingSeconds(),
-    timerState.getBlinkVisibility()
-  );
-  updateRemoteView();
-}
-
-// Cleanup on page unload
 window.addEventListener('beforeunload', () => {
   clearRemoteStartPending();
   if (bridge && isInitialized) {
-    try {
-      bridge.shutDownPageContainer(0);
-    } catch (error) {
-      console.error('Error shutting down page container:', error);
-    }
+    try { bridge.shutDownPageContainer(0); } catch {}
   }
-  if (timerState) {
-    timerState.cleanup();
-  }
+  timerState?.cleanup();
 });
 
-// Start the app
 init();
-
