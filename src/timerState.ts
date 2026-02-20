@@ -60,6 +60,21 @@ export class TimerStateManager {
     return this.data.remainingSeconds;
   }
 
+  getDisplayRemainingSeconds(leadMs = 0): number {
+    if (this.data.state !== TimerState.RUNNING || this.data.endTimestamp === null) {
+      return this.data.remainingSeconds;
+    }
+
+    const safeLead = Math.max(0, leadMs);
+    const predicted = Math.max(0, Math.ceil((this.data.endTimestamp - Date.now() - safeLead) / 1000));
+
+    // Do not display 00:00 while timer is still logically running.
+    if (predicted <= 0 && this.data.remainingSeconds > 0) {
+      return 1;
+    }
+    return predicted;
+  }
+
   isBlinking(): boolean {
     return this.data.state === TimerState.DONE && this.data.blinkIntervalId !== null;
   }

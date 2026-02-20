@@ -20,12 +20,19 @@ type RenderReason = 'tick' | 'state' | 'foreground' | 'manual';
 const TELEMETRY_WINDOW_SIZE = 120;
 const TELEMETRY_FAST_BUCKET_RATIO = 0.25;
 const TELEMETRY_LOG_LIMIT = 120;
+const DISPLAY_TICKER_INTERVAL_MS = 120;
+const DISPLAY_LEAD_MIN_MS = 80;
+const DISPLAY_LEAD_MAX_MS = 800;
+const DISPLAY_LEAD_DEFAULT_MS = 420;
 
 const telemetrySamples: number[] = [];
 const telemetryTickSamples: number[] = [];
 const telemetryLogLines: string[] = [];
 let telemetryInFlightRenders = 0;
 let telemetryMaxQueueDepth = 0;
+let estimatedFixedTickDelayMs = DISPLAY_LEAD_DEFAULT_MS;
+let displayTickIntervalId: ReturnType<typeof setInterval> | null = null;
+let lastDisplayTickSecondSent: number | null = null;
 
 function getTelemetrySummaryEl(): HTMLElement | null {
   return document.getElementById('telemetry-summary');
@@ -84,6 +91,55 @@ function pushDetailedLog(source: string, message: string): void {
   pushTelemetryLog(source ? `${source} ${message}` : message);
 }
 
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function getRenderRemainingSeconds(reason: RenderReason): number {
+  if (!timerState) return 0;
+  const state = timerState.getState();
+  if (state === TimerState.RUNNING && reason === 'tick') {
+    return timerState.getDisplayRemainingSeconds(estimatedFixedTickDelayMs);
+  }
+  return timerState.getRemainingSeconds();
+}
+
+function stopDisplayTicker(): void {
+  if (displayTickIntervalId !== null) {
+    clearInterval(displayTickIntervalId);
+    displayTickIntervalId = null;
+    pushDetailedLog('[TICKER]', 'stopped');
+  }
+  lastDisplayTickSecondSent = null;
+}
+
+function startDisplayTicker(): void {
+  if (displayTickIntervalId !== null) return;
+  displayTickIntervalId = setInterval(() => {
+    if (!bridge || !timerState || !isInForeground) return;
+    if (timerState.getState() !== TimerState.RUNNING) return;
+
+    const displaySecond = timerState.getDisplayRemainingSeconds(estimatedFixedTickDelayMs);
+    if (displaySecond === lastDisplayTickSecondSent) return;
+
+    lastDisplayTickSecondSent = displaySecond;
+    pushDetailedLog(
+      '[TICKER]',
+      `emit displaySecond=${displaySecond}s lead=${estimatedFixedTickDelayMs.toFixed(1)}ms real=${timerState.getRemainingSeconds()}s`,
+    );
+    sendToGlasses('tick');
+  }, DISPLAY_TICKER_INTERVAL_MS);
+  pushDetailedLog('[TICKER]', `started interval=${DISPLAY_TICKER_INTERVAL_MS}ms`);
+}
+
+function syncDisplayTickerWithState(state: TimerState): void {
+  if (state === TimerState.RUNNING) {
+    startDisplayTicker();
+    return;
+  }
+  stopDisplayTicker();
+}
+
 function recordRenderTelemetry(
   reason: RenderReason,
   elapsedMs: number,
@@ -106,6 +162,13 @@ function recordRenderTelemetry(
   const fastBucketCount = Math.max(1, Math.floor(sorted.length * TELEMETRY_FAST_BUCKET_RATIO));
   const fixedMs = average(sorted.slice(0, fastBucketCount));
   const extraMs = Math.max(0, elapsedMs - fixedMs);
+  if (reason === 'tick') {
+    const previousLead = estimatedFixedTickDelayMs;
+    estimatedFixedTickDelayMs = clamp(fixedMs, DISPLAY_LEAD_MIN_MS, DISPLAY_LEAD_MAX_MS);
+    if (Math.abs(previousLead - estimatedFixedTickDelayMs) >= 20) {
+      pushDetailedLog('[TICKER]', `lead-adjust ${previousLead.toFixed(1)}ms -> ${estimatedFixedTickDelayMs.toFixed(1)}ms`);
+    }
+  }
 
   pushDetailedLog(
     '[RENDER]',
@@ -175,7 +238,7 @@ function sendToGlasses(reason: RenderReason = 'tick') {
   }
   const state = timerState.getState();
   const selectedPreset = timerState.getSelectedPreset();
-  const remainingSeconds = timerState.getRemainingSeconds();
+  const remainingSeconds = getRenderRemainingSeconds(reason);
   const blinkVisibility = timerState.getBlinkVisibility();
   const startedAt = performance.now();
   telemetryInFlightRenders++;
@@ -207,7 +270,7 @@ function sendToGlassesImmediate(reason: RenderReason = 'manual') {
   }
   const state = timerState.getState();
   const selectedPreset = timerState.getSelectedPreset();
-  const remainingSeconds = timerState.getRemainingSeconds();
+  const remainingSeconds = getRenderRemainingSeconds(reason);
   const blinkVisibility = timerState.getBlinkVisibility();
   const startedAt = performance.now();
   telemetryInFlightRenders++;
@@ -381,13 +444,16 @@ async function init() {
     timerState.setOnUpdate(() => {
       pushDetailedLog('[CALLBACK]', `onUpdate state=${timerState?.getState()} t=${timerState ? formatTime(timerState.getRemainingSeconds()) : '--:--'}`);
       updateRemoteView();
-      sendToGlasses('tick');
     });
 
     // State transitions (start/pause/done): always push to glasses immediately
     timerState.setOnStateChange(() => {
-      pushDetailedLog('[CALLBACK]', `onStateChange state=${timerState?.getState()} t=${timerState ? formatTime(timerState.getRemainingSeconds()) : '--:--'}`);
+      const state = timerState?.getState();
+      pushDetailedLog('[CALLBACK]', `onStateChange state=${state} t=${timerState ? formatTime(timerState.getRemainingSeconds()) : '--:--'}`);
       updateRemoteView();
+      if (state) {
+        syncDisplayTickerWithState(state);
+      }
       sendToGlassesImmediate('state');
     });
 
@@ -404,6 +470,7 @@ async function init() {
     setupEventHandlers();
     await renderUI(bridge, TimerState.IDLE, timerState.getSelectedPreset(), timerState.getRemainingSeconds(), true);
     pushDetailedLog('[APP]', 'initial render complete');
+    syncDisplayTickerWithState(timerState.getState());
     isInitialized = true;
     updateRemoteView();
   } catch (err) {
@@ -416,6 +483,7 @@ async function init() {
 
 window.addEventListener('beforeunload', () => {
   pushDetailedLog('[APP]', 'beforeunload');
+  stopDisplayTicker();
   clearRemoteStartPending();
   if (bridge && isInitialized) {
     try { bridge.shutDownPageContainer(0); } catch {}
