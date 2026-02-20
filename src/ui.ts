@@ -14,12 +14,10 @@ const DISPLAY_HEIGHT = 288;
 const TEXT_CONTAINER_ID = 1;
 const MP_CONTAINER_ID = 2; // "M" block (minute tens)
 const MSS_CONTAINER_ID = 3; // "M:SS" block (minute ones + colon + seconds)
-const PRESET_CONTAINER_ID = 4;
 
 const TEXT_CONTAINER_NAME = 'timer-text';
 const MP_CONTAINER_NAME = 'timer-mp';
 const MSS_CONTAINER_NAME = 'timer-mss';
-const PRESET_CONTAINER_NAME = 'preset-display';
 
 const PRESET_COLOR_BG = '#000000';
 const PRESET_COLOR_TEXT = '#00ff88';
@@ -393,15 +391,6 @@ async function getPresetDigitAreaBytes(
   }
 }
 
-async function getBlankPresetPngBytes(): Promise<number[]> {
-  return getBlankPngBytes('blank-preset', DISPLAY_WIDTH, DISPLAY_HEIGHT);
-}
-
-async function clearPresetImage(bridge: any): Promise<void> {
-  const blank = await getBlankPresetPngBytes();
-  await pushImage(bridge, PRESET_CONTAINER_ID, PRESET_CONTAINER_NAME, blank);
-}
-
 function buildTimerOverlayText(state: TimerState, isBlinkingVisible: boolean): string {
   if (state === TimerState.PAUSED) {
     return 'PAUSED';
@@ -759,25 +748,10 @@ export async function renderUI(
     if (state === TimerState.IDLE) {
       if (currentScreenType !== 'preset') {
         await clearTimerImages(bridge, true);
-        await clearPresetImage(bridge);
       }
-      const presetBytes = await getPresetImageBytes(selectedPreset);
-      await pushImage(bridge, PRESET_CONTAINER_ID, PRESET_CONTAINER_NAME, presetBytes);
-      // Use preset crop in digit areas so they blend in (no black rectangle)
-      const mpPresetBytes = await getPresetDigitAreaBytes(selectedPreset, MP_X, TIMER_Y, MP_WIDTH, DIGIT_HEIGHT);
-      const mssPresetBytes = await getPresetDigitAreaBytes(selectedPreset, MSS_X, TIMER_Y, MSS_WIDTH, DIGIT_HEIGHT);
-      if (mpPresetBytes.length > 0) await pushImage(bridge, MP_CONTAINER_ID, MP_CONTAINER_NAME, mpPresetBytes);
-      if (mssPresetBytes.length > 0) await pushImage(bridge, MSS_CONTAINER_ID, MSS_CONTAINER_NAME, mssPresetBytes);
-      lastDisplayedTime = '';
-      areTimerImagesVisible = false;
-      pushText(bridge, ' ', true);
-      lastTextContent = ' ';
+      pushText(bridge, buildPresetContent(selectedPreset));
       currentScreenType = 'preset';
       return;
-    }
-
-    if (currentScreenType === 'preset') {
-      await clearPresetImage(bridge);
     }
     pushText(bridge, buildTimerOverlayText(state, isBlinkingVisible));
 
@@ -834,22 +808,12 @@ export async function createPageContainers(bridge: any, selectedPreset = 5): Pro
       height: DIGIT_HEIGHT,
     });
 
-    const presetContainer = new ImageContainerProperty({
-      containerID: PRESET_CONTAINER_ID,
-      containerName: PRESET_CONTAINER_NAME,
-      xPosition: 0,
-      yPosition: 0,
-      width: DISPLAY_WIDTH,
-      height: DISPLAY_HEIGHT,
-    });
-
-    // Preset container first so it is drawn behind the digit containers (MP, MSS).
-    // When timer runs we clear it with black; digits stay on top and remain visible.
+    // SDK supports 3 containers total (1 text + 2 image for timer digits)
     const result = await bridge.createStartUpPageContainer(
       new CreateStartUpPageContainer({
-        containerTotalNum: 4,
+        containerTotalNum: 3,
         textObject: [textContainer],
-        imageObject: [presetContainer, mpContainer, mssContainer],
+        imageObject: [mpContainer, mssContainer],
       }),
     );
 
