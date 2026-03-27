@@ -1,0 +1,16 @@
+{
+  "package_id": "com.giova.g2timer",
+  "edition": "202601",
+  "name": "G2 Timer",
+  "version": "0.0.3",
+  "min_app_version": "2.0.0",
+  "min_sdk_version": "0.0.7",
+  "tagline": "Minimal countdown timer for Even G2",
+  "description": "A simple preset-based countdown timer for Even Realities G2 glasses.",
+  "author": "giova",
+  "entrypoint": "index.html",
+  "permissions": [],
+  "supported_languages": [
+    "en"
+  ]
+}

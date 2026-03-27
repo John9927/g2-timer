@@ -60,7 +60,7 @@
         padding: 16px;
         box-shadow: var(--shadow);
       }
-      #remote-preset-section label {
+      .card label {
         display: block;
         font-size: 0.8rem;
         font-weight: 500;
@@ -69,12 +69,19 @@
         text-transform: uppercase;
         letter-spacing: 0.04em;
       }
-      #remote-preset-buttons {
+      #remote-preset-section label {
+        margin-bottom: 10px;
+      }
+      #remote-preset-buttons,
+      #remote-screen-buttons,
+      .layout-row {
         display: flex;
         flex-wrap: wrap;
         gap: 8px;
       }
-      .preset-btn {
+      .preset-btn,
+      .screen-btn,
+      .layout-btn {
         flex: 1 1 calc(25% - 6px);
         min-width: 52px;
         padding: 12px 8px;
@@ -87,24 +94,55 @@
         cursor: pointer;
         transition: background 0.15s, border-color 0.15s, color 0.15s;
       }
-      .preset-btn:hover:not(:disabled), .preset-btn:active:not(:disabled) {
+      .screen-btn,
+      .layout-btn {
+        flex: 1 1 0;
+        min-width: 84px;
+      }
+      .preset-btn:hover:not(:disabled), .preset-btn:active:not(:disabled),
+      .screen-btn:hover:not(:disabled), .screen-btn:active:not(:disabled),
+      .layout-btn:hover:not(:disabled), .layout-btn:active:not(:disabled) {
         background: var(--bg-subtle);
         border-color: var(--text-muted);
       }
-      .preset-btn.selected {
+      .preset-btn.selected,
+      .screen-btn.selected,
+      .layout-btn.selected {
         background: var(--accent);
         border-color: var(--accent);
         color: var(--accent-inverse);
       }
-      .preset-btn.selected:hover:not(:disabled), .preset-btn.selected:active:not(:disabled) {
+      .preset-btn.selected:hover:not(:disabled), .preset-btn.selected:active:not(:disabled),
+      .screen-btn.selected:hover:not(:disabled), .screen-btn.selected:active:not(:disabled),
+      .layout-btn.selected:hover:not(:disabled), .layout-btn.selected:active:not(:disabled) {
         background: var(--accent);
         border-color: var(--accent);
         color: var(--accent-inverse);
         opacity: 0.9;
       }
-      .preset-btn:disabled {
+      .preset-btn:disabled,
+      .screen-btn:disabled,
+      .layout-btn:disabled {
         opacity: 0.5;
         cursor: not-allowed;
+      }
+      #glasses-view-summary {
+        font-size: 0.92rem;
+        line-height: 1.4;
+        color: var(--text);
+        margin-bottom: 12px;
+      }
+      .layout-group + .layout-group {
+        margin-top: 12px;
+      }
+      .layout-group span {
+        display: block;
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: var(--text-muted);
+        margin-bottom: 8px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
       }
       .action-row {
         display: flex;
@@ -167,13 +205,9 @@
         color: var(--danger);
       }
       #telemetry-card label {
-        display: block;
         font-size: 0.72rem;
         font-weight: 600;
-        color: var(--text-muted);
         margin-bottom: 8px;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
       }
       #telemetry-summary {
         font-size: 0.78rem;
@@ -202,6 +236,15 @@
       <h1>G2 Timer</h1>
     </div>
     <div id="remote-container">
+      <div class="card" id="display-state-card">
+        <label>Glasses screen</label>
+        <div id="glasses-view-summary">Connecting...</div>
+        <div id="remote-screen-buttons">
+          <button type="button" class="screen-btn" data-screen="home">Menu</button>
+          <button type="button" class="screen-btn" data-screen="timer">Timer</button>
+          <button type="button" class="screen-btn" data-screen="settings">Settings</button>
+        </div>
+      </div>
       <div class="card" id="remote-preset-section">
         <label>Duration (minutes)</label>
         <div id="remote-preset-buttons">
@@ -212,6 +255,32 @@
           <button type="button" class="preset-btn" data-preset="15">15</button>
           <button type="button" class="preset-btn" data-preset="30">30</button>
           <button type="button" class="preset-btn" data-preset="60">60</button>
+        </div>
+      </div>
+      <div class="card" id="layout-controls">
+        <label>Timer display</label>
+        <div class="layout-group">
+          <span>Size</span>
+          <div class="layout-row">
+            <button type="button" class="layout-btn" data-field="format" data-value="large">Large</button>
+            <button type="button" class="layout-btn" data-field="format" data-value="compact">Small</button>
+          </div>
+        </div>
+        <div class="layout-group">
+          <span>Vertical</span>
+          <div class="layout-row">
+            <button type="button" class="layout-btn" data-field="vertical" data-value="top">Top</button>
+            <button type="button" class="layout-btn" data-field="vertical" data-value="center">Center</button>
+            <button type="button" class="layout-btn" data-field="vertical" data-value="bottom">Bottom</button>
+          </div>
+        </div>
+        <div class="layout-group">
+          <span>Horizontal</span>
+          <div class="layout-row">
+            <button type="button" class="layout-btn" data-field="horizontal" data-value="left">Left</button>
+            <button type="button" class="layout-btn" data-field="horizontal" data-value="center">Center</button>
+            <button type="button" class="layout-btn" data-field="horizontal" data-value="right">Right</button>
+          </div>
         </div>
       </div>
       <div class="card" id="remote-actions">

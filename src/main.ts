@@ -1,7 +1,25 @@
-import { waitForEvenAppBridge } from '@evenrealities/even_hub_sdk';
+import { OsEventTypeList, waitForEvenAppBridge } from '@evenrealities/even_hub_sdk';
 import { TimerStateManager } from './timerState';
-import { createPageContainers, renderUI, formatTime, setUiDebugLogger } from './ui';
+import {
+  createPageContainers,
+  renderUI,
+  formatTime,
+  setUiDebugLogger,
+  type GlassesNavigationState,
+  type GlassesPanel,
+  type HomeSelection,
+} from './ui';
 import { TimerState } from './constants';
+import {
+  DEFAULT_TIMER_LAYOUT_SETTINGS,
+  adjustTimerLayoutSetting,
+  formatTimerLayoutValue,
+  loadTimerLayoutSettings,
+  nextTimerLayoutField,
+  saveTimerLayoutSettings,
+  type TimerLayoutField,
+  type TimerLayoutSettings,
+} from './layoutSettings';
 
 const REMOTE_START_DELAY_MS = 3000;
 const REMOTE_START_COUNTDOWN_INTERVAL_MS = 1000;
@@ -14,6 +32,10 @@ let isInForeground = true;
 let remoteStartTimeoutId: ReturnType<typeof setTimeout> | null = null;
 let remoteStartCountdownIntervalId: ReturnType<typeof setInterval> | null = null;
 let remoteStartScheduledAt: number | null = null;
+let committedLayoutSettings: TimerLayoutSettings = DEFAULT_TIMER_LAYOUT_SETTINGS;
+let glassesPanel: GlassesPanel = 'home';
+let homeSelection: HomeSelection = 'timer';
+let settingsField: TimerLayoutField = 'format';
 
 type RenderReason = 'tick' | 'state' | 'foreground' | 'manual';
 
@@ -93,6 +115,79 @@ function pushTelemetryLog(line: string): void {
 
 function pushDetailedLog(source: string, message: string): void {
   pushTelemetryLog(source ? `${source} ${message}` : message);
+}
+
+function activeLayoutSettings(): TimerLayoutSettings {
+  return committedLayoutSettings;
+}
+
+function isIdleOnGlasses(): boolean {
+  return Boolean(timerState) && timerState.getState() === TimerState.IDLE;
+}
+
+function effectivePanel(): GlassesPanel {
+  if (!timerState) {
+    return glassesPanel;
+  }
+  return timerState.getState() === TimerState.IDLE ? glassesPanel : 'timer';
+}
+
+function currentNavigationState(): GlassesNavigationState {
+  return {
+    panel: effectivePanel(),
+    homeSelection,
+    settingsField,
+  };
+}
+
+async function persistLayoutSettings(settings: TimerLayoutSettings): Promise<void> {
+  await saveTimerLayoutSettings(settings, bridge);
+}
+
+function openHomePanel(nextSelection: HomeSelection = homeSelection): void {
+  if (!isIdleOnGlasses()) {
+    pushDetailedLog('[NAV]', 'home panel ignored: timer not idle');
+    return;
+  }
+
+  homeSelection = nextSelection;
+  glassesPanel = 'home';
+  pushDetailedLog('[NAV]', `panel=home selection=${homeSelection}`);
+  updateRemoteView();
+  sendToGlassesImmediate('manual');
+}
+
+function openTimerPanel(): void {
+  if (!isIdleOnGlasses()) {
+    pushDetailedLog('[NAV]', 'timer panel ignored: timer not idle');
+    return;
+  }
+
+  homeSelection = 'timer';
+  glassesPanel = 'timer';
+  pushDetailedLog('[NAV]', 'panel=timer');
+  updateRemoteView();
+  sendToGlassesImmediate('manual');
+}
+
+function openSettingsPanel(): void {
+  if (!isIdleOnGlasses()) {
+    pushDetailedLog('[NAV]', 'settings panel ignored: timer not idle');
+    return;
+  }
+
+  homeSelection = 'settings';
+  glassesPanel = 'settings';
+  settingsField = 'format';
+  pushDetailedLog('[NAV]', 'panel=settings');
+  updateRemoteView();
+  sendToGlassesImmediate('manual');
+}
+
+function persistCurrentLayoutSettings(): void {
+  void persistLayoutSettings(committedLayoutSettings).catch((error) => {
+    pushDetailedLog('[LAYOUT]', `persist error ${String(error)}`);
+  });
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -194,11 +289,43 @@ function clearRemoteStartPending() {
   pushDetailedLog('[REMOTE]', `clearRemoteStartPending timeout=${hadTimeout} interval=${hadInterval}`);
 }
 
+function formatTimerLayoutLabel(): string {
+  return [
+    formatTimerLayoutValue('format', committedLayoutSettings),
+    formatTimerLayoutValue('vertical', committedLayoutSettings),
+    formatTimerLayoutValue('horizontal', committedLayoutSettings),
+  ].join(' / ');
+}
+
+function getDisplaySummary(): string {
+  if (!timerState) {
+    return 'Connecting...';
+  }
+
+  const state = timerState.getState();
+  if (state !== TimerState.IDLE) {
+    return `Timer ${state.toLowerCase()} · ${formatTime(timerState.getRemainingSeconds())}`;
+  }
+
+  if (glassesPanel === 'settings') {
+    return `Layout settings · ${formatTimerLayoutLabel()}`;
+  }
+
+  if (glassesPanel === 'timer') {
+    return `Timer setup · ${timerState.getSelectedPreset()} min`;
+  }
+
+  return `Home menu · ${homeSelection === 'timer' ? 'Timer' : 'Layout settings'}`;
+}
+
 function updateRemoteView() {
   const status = document.getElementById('remote-status');
   const btnStart = document.getElementById('btn-start-pause') as HTMLButtonElement | null;
   const btnReset = document.getElementById('btn-reset') as HTMLButtonElement | null;
   const presetBtns = document.querySelectorAll('#remote-preset-buttons .preset-btn');
+  const displaySummary = document.getElementById('glasses-view-summary');
+  const screenBtns = document.querySelectorAll('#remote-screen-buttons .screen-btn');
+  const layoutBtns = document.querySelectorAll('#layout-controls .layout-btn');
 
   const connected = !!(bridge && timerState);
   if (status) {
@@ -207,19 +334,42 @@ function updateRemoteView() {
       : 'Connecting...';
     status.className = connected ? 'connected' : '';
   }
+  if (displaySummary) {
+    displaySummary.textContent = getDisplaySummary();
+  }
 
   const pending = remoteStartScheduledAt !== null;
 
   if (timerState) {
     const preset = timerState.getSelectedPreset();
+    const state = timerState.getState();
+    const canEditPreset = connected && !pending && state === TimerState.IDLE;
+    const currentPanel = effectivePanel();
     presetBtns.forEach(b => {
       const p = parseInt((b as HTMLElement).dataset.preset || '', 10);
       b.classList.toggle('selected', p === preset);
-      (b as HTMLButtonElement).disabled = !connected || pending;
+      (b as HTMLButtonElement).disabled = !canEditPreset;
+    });
+    screenBtns.forEach((button) => {
+      const target = (button as HTMLElement).dataset.screen || '';
+      const isCurrent = target === currentPanel;
+      const isLocked = state !== TimerState.IDLE && target !== 'timer';
+      button.classList.toggle('selected', isCurrent);
+      (button as HTMLButtonElement).disabled = !connected || isLocked;
+    });
+    layoutBtns.forEach((button) => {
+      const field = (button as HTMLElement).dataset.field || '';
+      const value = (button as HTMLElement).dataset.value || '';
+      let isSelected = false;
+      if (field === 'format') isSelected = committedLayoutSettings.format === value;
+      if (field === 'vertical') isSelected = committedLayoutSettings.vertical === value;
+      if (field === 'horizontal') isSelected = committedLayoutSettings.horizontal === value;
+      button.classList.toggle('selected', isSelected);
+      (button as HTMLButtonElement).disabled = !connected;
     });
     if (btnStart) {
       btnStart.disabled = !connected;
-      const running = timerState.getState() === TimerState.RUNNING;
+      const running = state === TimerState.RUNNING;
       if (pending) {
         btnStart.textContent = 'Please wait\u2026';
         btnStart.classList.remove('pause-mode');
@@ -231,6 +381,8 @@ function updateRemoteView() {
     if (btnReset) btnReset.disabled = !connected;
   } else {
     presetBtns.forEach(b => { b.classList.remove('selected'); (b as HTMLButtonElement).disabled = true; });
+    screenBtns.forEach((button) => { button.classList.remove('selected'); (button as HTMLButtonElement).disabled = true; });
+    layoutBtns.forEach((button) => { button.classList.remove('selected'); (button as HTMLButtonElement).disabled = true; });
     if (btnStart) { btnStart.disabled = true; btnStart.textContent = 'Start'; }
     if (btnReset) btnReset.disabled = true;
   }
@@ -258,6 +410,10 @@ function sendToGlasses(reason: RenderReason = 'tick') {
     selectedPreset,
     remainingSeconds,
     blinkVisibility,
+    {
+      layoutSettings: activeLayoutSettings(),
+      navigation: currentNavigationState(),
+    },
   ).then(() => {
     const elapsedMs = performance.now() - startedAt;
     recordRenderTelemetry(reason, elapsedMs, queueDepth, state, remainingSeconds);
@@ -290,6 +446,10 @@ function sendToGlassesImmediate(reason: RenderReason = 'manual') {
     selectedPreset,
     remainingSeconds,
     blinkVisibility,
+    {
+      layoutSettings: activeLayoutSettings(),
+      navigation: currentNavigationState(),
+    },
   ).then(() => {
     const elapsedMs = performance.now() - startedAt;
     recordRenderTelemetry(reason, elapsedMs, queueDepth, state, remainingSeconds);
@@ -307,6 +467,8 @@ function setupRemoteControl() {
   const btnStart = document.getElementById('btn-start-pause');
   const btnReset = document.getElementById('btn-reset');
   const presetBtns = document.querySelectorAll('#remote-preset-buttons .preset-btn');
+  const screenBtns = document.querySelectorAll('#remote-screen-buttons .screen-btn');
+  const layoutBtns = document.querySelectorAll('#layout-controls .layout-btn');
   pushDetailedLog('[REMOTE]', `setupRemoteControl presets=${presetBtns.length}`);
 
   btnStart?.addEventListener('click', () => {
@@ -347,7 +509,48 @@ function setupRemoteControl() {
       const min = parseInt((btn as HTMLElement).dataset.preset || '', 10);
       if (!timerState || !bridge || !min) return;
       pushDetailedLog('[REMOTE]', `preset click ${min}`);
+      glassesPanel = 'timer';
+      homeSelection = 'timer';
       timerState.setPreset(min);
+    });
+  });
+  screenBtns.forEach((button) => {
+    button.addEventListener('click', () => {
+      if (!timerState || !bridge) return;
+      const target = ((button as HTMLElement).dataset.screen || 'home') as GlassesPanel;
+      pushDetailedLog('[REMOTE]', `screen click ${target}`);
+      if (target === 'timer') {
+        openTimerPanel();
+      } else if (target === 'settings') {
+        openSettingsPanel();
+      } else {
+        openHomePanel();
+      }
+    });
+  });
+
+  layoutBtns.forEach((button) => {
+    button.addEventListener('click', () => {
+      if (!timerState || !bridge) return;
+
+      const field = (button as HTMLElement).dataset.field as TimerLayoutField | undefined;
+      const value = (button as HTMLElement).dataset.value;
+      if (!field || !value) return;
+
+      pushDetailedLog('[REMOTE]', `layout click field=${field} value=${value}`);
+      committedLayoutSettings = {
+        ...committedLayoutSettings,
+        [field]: value,
+      } as TimerLayoutSettings;
+      if (isIdleOnGlasses()) {
+        homeSelection = 'settings';
+        if (glassesPanel === 'home') {
+          glassesPanel = 'settings';
+        }
+      }
+      persistCurrentLayoutSettings();
+      updateRemoteView();
+      sendToGlassesImmediate('manual');
     });
   });
 }
@@ -363,36 +566,41 @@ function setupEventHandlers() {
     pushDetailedLog('[EVENT]', 'setupEventHandlers attached');
     bridge.onEvenHubEvent((event: any) => {
       if (!timerState || !isInForeground) return;
-      const type = event?.type || event?.eventType || event?.textEvent?.eventType;
-      pushDetailedLog('[EVENT]', `recv type=${String(type)}`);
+      const textEventType = event?.textEvent?.eventType;
+      const sysEventType = event?.sysEvent?.eventType;
+      pushDetailedLog('[EVENT]', `recv text=${String(textEventType)} sys=${String(sysEventType)}`);
       console.log('Even Hub event:', event);
 
-      if (event.textEvent) {
-        const evType = event.textEvent.eventType;
-        if (evType === 1) { handleSwipe(1); return; }
-        if (evType === 2) { handleSwipe(-1); return; }
-        if (evType === 0 || evType === undefined) { handleSingleTap(); return; }
+      if (sysEventType === OsEventTypeList.FOREGROUND_ENTER_EVENT) {
+        isInForeground = true;
+        pushDetailedLog('[EVENT]', 'enterForeground');
+        timerState.handleForeground();
+        sendToGlassesImmediate('foreground');
+        return;
       }
-
-      if (event.type === 'sysEvent') {
-        if (event.eventType === 'enterForeground') {
-          isInForeground = true;
-          pushDetailedLog('[EVENT]', 'enterForeground');
-          timerState?.handleForeground();
-          sendToGlassesImmediate('foreground');
-        } else if (event.eventType === 'exitForeground') {
-          pushDetailedLog('[EVENT]', 'exitForeground');
-          isInForeground = false;
-          timerState?.handleBackground();
-        }
+      if (sysEventType === OsEventTypeList.FOREGROUND_EXIT_EVENT) {
+        pushDetailedLog('[EVENT]', 'exitForeground');
+        isInForeground = false;
+        timerState.handleBackground();
         return;
       }
 
-      if (event.type === 'tap' || event.eventType === 'tap' || event.eventType === 0 || event.eventType === undefined) {
-        const taps = event.tapCount || event.taps || 1;
-        pushDetailedLog('[EVENT]', `tap count=${taps}`);
-        if (taps === 1) handleSingleTap();
-        else if (taps === 2) { timerState.resetToPreset(); }
+      if (textEventType === OsEventTypeList.SCROLL_TOP_EVENT) {
+        handleSwipe(1);
+        return;
+      }
+      if (textEventType === OsEventTypeList.SCROLL_BOTTOM_EVENT) {
+        handleSwipe(-1);
+        return;
+      }
+      if (textEventType === OsEventTypeList.DOUBLE_CLICK_EVENT) {
+        pushDetailedLog('[EVENT]', 'doubleTap');
+        handleDoubleTap();
+        return;
+      }
+      if (textEventType === OsEventTypeList.CLICK_EVENT) {
+        pushDetailedLog('[EVENT]', 'singleTap');
+        handleSingleTap();
       }
     });
   } catch (err) {
@@ -403,8 +611,50 @@ function setupEventHandlers() {
 
 function handleSingleTap() {
   if (!timerState || !bridge) return;
-  pushDetailedLog('[INPUT]', `singleTap state=${timerState.getState()}`);
+  const panel = effectivePanel();
+  pushDetailedLog('[INPUT]', `singleTap panel=${panel} state=${timerState.getState()}`);
+
+  if (panel === 'home') {
+    if (homeSelection === 'settings') {
+      openSettingsPanel();
+    } else {
+      openTimerPanel();
+    }
+    return;
+  }
+
+  if (panel === 'settings') {
+    settingsField = nextTimerLayoutField(settingsField);
+    pushDetailedLog('[LAYOUT]', `field=${settingsField}`);
+    updateRemoteView();
+    sendToGlassesImmediate('manual');
+    return;
+  }
+
   timerState.toggleStartPause();
+}
+
+function handleDoubleTap(): void {
+  if (!timerState || !bridge) return;
+  const panel = effectivePanel();
+  pushDetailedLog('[INPUT]', `doubleTap panel=${panel} state=${timerState.getState()}`);
+
+  if (panel === 'settings') {
+    openHomePanel('settings');
+    return;
+  }
+
+  if (panel === 'home') {
+    return;
+  }
+
+  if (panel === 'timer' && timerState.getState() === TimerState.IDLE) {
+    openHomePanel('timer');
+    return;
+  }
+
+  clearRemoteStartPending();
+  timerState.resetToPreset();
 }
 
 function handleSwipe(dir: 1 | -1) {
@@ -416,7 +666,29 @@ function handleSwipe(dir: 1 | -1) {
     return;
   }
   lastSwipeTime = now;
-  pushDetailedLog('[INPUT]', `swipe dir=${dir} accepted`);
+  const panel = effectivePanel();
+  pushDetailedLog('[INPUT]', `swipe dir=${dir} accepted panel=${panel}`);
+
+  if (panel === 'home') {
+    homeSelection = homeSelection === 'timer' ? 'settings' : 'timer';
+    pushDetailedLog('[NAV]', `home selection=${homeSelection}`);
+    updateRemoteView();
+    sendToGlassesImmediate('manual');
+    return;
+  }
+
+  if (panel === 'settings') {
+    committedLayoutSettings = adjustTimerLayoutSetting(committedLayoutSettings, settingsField, dir);
+    pushDetailedLog(
+      '[LAYOUT]',
+      `adjust field=${settingsField} dir=${dir} -> ${committedLayoutSettings.format}/${committedLayoutSettings.vertical}/${committedLayoutSettings.horizontal}`,
+    );
+    persistCurrentLayoutSettings();
+    updateRemoteView();
+    sendToGlassesImmediate('manual');
+    return;
+  }
+
   if (dir === 1) timerState.cyclePreset(); else timerState.cyclePresetBackward();
 }
 
@@ -443,6 +715,12 @@ async function init() {
       return;
     }
 
+    committedLayoutSettings = await loadTimerLayoutSettings(bridge);
+    pushDetailedLog(
+      '[LAYOUT]',
+      `loaded format=${committedLayoutSettings.format} vertical=${committedLayoutSettings.vertical} horizontal=${committedLayoutSettings.horizontal}`,
+    );
+
     timerState = new TimerStateManager();
     timerState.setOnDebugLog((line) => pushDetailedLog('', line));
     setupRemoteControl();
@@ -464,18 +742,31 @@ async function init() {
       sendToGlassesImmediate('state');
     });
 
-    const ok = await createPageContainers(bridge, timerState.getSelectedPreset());
+    const ok = await createPageContainers(
+      bridge,
+      TimerState.IDLE,
+      timerState.getSelectedPreset(),
+      committedLayoutSettings,
+      currentNavigationState(),
+    );
     pushDetailedLog('[APP]', `createPageContainers ok=${ok}`);
     if (!ok) {
       console.error('Failed to create page containers');
-      await renderUI(bridge, TimerState.IDLE, 5, 300, true, 'ERROR: container creation failed');
+      await renderUI(bridge, TimerState.IDLE, 5, 300, true, {
+        debugMessage: 'ERROR: container creation failed',
+        layoutSettings: committedLayoutSettings,
+        navigation: currentNavigationState(),
+      });
       const s = document.getElementById('remote-status');
       if (s) { s.textContent = 'Display creation error'; s.className = 'error'; }
       return;
     }
 
     setupEventHandlers();
-    await renderUI(bridge, TimerState.IDLE, timerState.getSelectedPreset(), timerState.getRemainingSeconds(), true);
+    await renderUI(bridge, TimerState.IDLE, timerState.getSelectedPreset(), timerState.getRemainingSeconds(), true, {
+      layoutSettings: committedLayoutSettings,
+      navigation: currentNavigationState(),
+    });
     pushDetailedLog('[APP]', 'initial render complete');
     syncDisplayTickerWithState(timerState.getState());
     isInitialized = true;

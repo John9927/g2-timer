@@ -1,22 +1,27 @@
 {
   "name": "g2-timer",
   "private": true,
-  "version": "0.0.1",
+  "version": "0.0.3",
   "type": "module",
   "scripts": {
     "dev": "vite --host",
     "dev:sim": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && npx @evenrealities/evenhub-simulator http://localhost:5173\"",
     "dev:qr": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && node scripts/show-qr.js\"",
     "build": "vite build",
+    "even:login": "evenhub login",
+    "even:qr": "evenhub qr",
+    "even:pack": "npm run build && evenhub pack app.json dist --output g2-timer.ehpk",
+    "even:pack:check": "npm run build && evenhub pack app.json dist --output g2-timer.ehpk --check",
     "preview": "vite preview --host",
     "qr": "node scripts/show-qr.js",
     "qr:vercel": "node scripts/generate-qr-vercel.js"
   },
   "dependencies": {
-    "@evenrealities/even_hub_sdk": "^0.0.7"
+    "@evenrealities/even_hub_sdk": "^0.0.9"
   },
   "devDependencies": {
-    "@evenrealities/evenhub-simulator": "latest",
+    "@evenrealities/evenhub-cli": "^0.1.11",
+    "@evenrealities/evenhub-simulator": "^0.6.2",
     "@types/node": "^20.10.0",
     "concurrently": "^8.2.2",
     "qrcode-terminal": "^0.12.0",
