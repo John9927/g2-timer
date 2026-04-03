@@ -38,12 +38,10 @@ type PixelPattern = number[][];
 const DISPLAY_WIDTH = 576;
 const DISPLAY_HEIGHT = 288;
 
-const CAPTURE_CONTAINER_ID = 1;
-const DISPLAY_CONTAINER_ID = 2;
-const MP_CONTAINER_ID = 3;
-const MSS_CONTAINER_ID = 4;
+const DISPLAY_CONTAINER_ID = 1;
+const MP_CONTAINER_ID = 2;
+const MSS_CONTAINER_ID = 3;
 
-const CAPTURE_CONTAINER_NAME = 'capture';
 const DISPLAY_CONTAINER_NAME = 'display';
 const MP_CONTAINER_NAME = 'timer-mm';
 const MSS_CONTAINER_NAME = 'timer-ss';
@@ -67,8 +65,9 @@ const LARGE_TIMER_MARGIN_X = 24;
 const LARGE_TIMER_MARGIN_Y = 28;
 const COMPACT_TIMER_MARGIN_X = 24;
 const COMPACT_TIMER_MARGIN_Y = 32;
-const COMPACT_TIMER_WIDTH = 210;
-const COMPACT_TIMER_HEIGHT = 92;
+const COMPACT_TIMER_WIDTH = 300;
+const COMPACT_TIMER_HEIGHT = 112;
+const COMPACT_TIMER_CENTER_BIAS_X = 52;
 
 const DIGIT_PATTERNS: Record<string, PixelPattern> = {
   '0': [[1, 1, 1, 1, 1], [1, 0, 0, 0, 1], [1, 0, 0, 0, 1], [1, 0, 0, 0, 1], [1, 0, 0, 0, 1], [1, 0, 0, 0, 1], [1, 1, 1, 1, 1]],
@@ -380,20 +379,15 @@ function alignVertical(vertical: TimerLayoutSettings['vertical'], height: number
   return Math.floor((DISPLAY_HEIGHT - height) / 2);
 }
 
-function buildCaptureContainer(): TextContainerProperty {
-  return new TextContainerProperty({
-    containerID: CAPTURE_CONTAINER_ID,
-    containerName: CAPTURE_CONTAINER_NAME,
-    xPosition: 0,
-    yPosition: 0,
-    width: DISPLAY_WIDTH,
-    height: DISPLAY_HEIGHT,
-    borderWidth: 0,
-    borderColor: 0,
-    paddingLength: 0,
-    content: ' ',
-    isEventCapture: 1,
-  });
+function alignCompactHorizontal(horizontal: TimerLayoutSettings['horizontal']): number {
+  const base = alignHorizontal(horizontal, COMPACT_TIMER_WIDTH, COMPACT_TIMER_MARGIN_X);
+
+  if (horizontal !== 'center') {
+    return base;
+  }
+
+  const maxX = DISPLAY_WIDTH - COMPACT_TIMER_WIDTH - COMPACT_TIMER_MARGIN_X;
+  return Math.min(maxX, base + COMPACT_TIMER_CENTER_BIAS_X);
 }
 
 function buildDisplayContainer(
@@ -405,7 +399,7 @@ function buildDisplayContainer(
     return new TextContainerProperty({
       containerID: DISPLAY_CONTAINER_ID,
       containerName: DISPLAY_CONTAINER_NAME,
-      xPosition: alignHorizontal(layoutSettings.horizontal, COMPACT_TIMER_WIDTH, COMPACT_TIMER_MARGIN_X),
+      xPosition: alignCompactHorizontal(layoutSettings.horizontal),
       yPosition: alignVertical(layoutSettings.vertical, COMPACT_TIMER_HEIGHT, COMPACT_TIMER_MARGIN_Y),
       width: COMPACT_TIMER_WIDTH,
       height: COMPACT_TIMER_HEIGHT,
@@ -413,7 +407,7 @@ function buildDisplayContainer(
       borderColor: 0,
       paddingLength: 8,
       content,
-      isEventCapture: 0,
+      isEventCapture: 1,
     });
   }
 
@@ -428,7 +422,7 @@ function buildDisplayContainer(
     borderColor: 0,
     paddingLength: 20,
     content,
-    isEventCapture: 0,
+    isEventCapture: 1,
   });
 }
 
@@ -512,7 +506,6 @@ function buildContainerPayload(
   initialContent: string,
 ) {
   const textObject = [
-    buildCaptureContainer(),
     buildDisplayContainer(screen, layoutSettings, initialContent),
   ];
 

@@ -66,6 +66,10 @@ let estimatedFixedTickDelayMs = DISPLAY_LEAD_DEFAULT_MS;
 let displayTickIntervalId: ReturnType<typeof setInterval> | null = null;
 let lastDisplayTickSecondSent: number | null = null;
 let lastRenderedPresetButtonsSignature = '';
+let lastRawInteractionEventType: number | null = null;
+let lastRawInteractionEventAt = 0;
+
+const RAW_EVENT_FALLBACK_WINDOW_MS = 500;
 
 function getTelemetrySummaryEl(): HTMLElement | null {
   return document.getElementById('telemetry-summary');
@@ -126,6 +130,79 @@ function pushTelemetryLog(line: string): void {
 
 function pushDetailedLog(source: string, message: string): void {
   pushTelemetryLog(source ? `${source} ${message}` : message);
+}
+
+function normalizeRawEventType(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    const numericValue = Number(value);
+    if (Number.isFinite(numericValue)) {
+      return numericValue;
+    }
+
+    const enumValue = (OsEventTypeList as Record<string, unknown>)[value];
+    if (typeof enumValue === 'number') {
+      return enumValue;
+    }
+  }
+
+  return null;
+}
+
+function extractRawEventType(input: unknown): number | null {
+  if (!input || typeof input !== 'object') {
+    return null;
+  }
+
+  const candidate = input as Record<string, unknown>;
+  const directKeys = ['eventType', 'EventType', 'event_type', 'Event_Type'];
+
+  for (const key of directKeys) {
+    const normalized = normalizeRawEventType(candidate[key]);
+    if (normalized !== null) {
+      return normalized;
+    }
+  }
+
+  const nestedKeys = ['jsonData', 'data', 'payload', 'textEvent', 'listEvent', 'sysEvent'];
+  for (const key of nestedKeys) {
+    const nested = candidate[key];
+    if (nested && typeof nested === 'object') {
+      const normalized = extractRawEventType(nested);
+      if (normalized !== null) {
+        return normalized;
+      }
+    }
+  }
+
+  return null;
+}
+
+function rememberRawInteractionEvent(rawEvent: unknown): void {
+  const eventType = extractRawEventType(rawEvent);
+  if (eventType === null) {
+    return;
+  }
+
+  lastRawInteractionEventType = eventType;
+  lastRawInteractionEventAt = Date.now();
+  pushDetailedLog('[RAW]', `eventType=${eventType}`);
+}
+
+function getRecentRawInteractionEventType(): number | null {
+  if (Date.now() - lastRawInteractionEventAt > RAW_EVENT_FALLBACK_WINDOW_MS) {
+    return null;
+  }
+
+  return lastRawInteractionEventType;
+}
+
+function clearRecentRawInteractionEventType(): void {
+  lastRawInteractionEventType = null;
+  lastRawInteractionEventAt = 0;
 }
 
 function activeLayoutSettings(): TimerLayoutSettings {
@@ -706,6 +783,39 @@ function attachPageLifecycleHandlers(): void {
   window.addEventListener('pagehide', () => syncPageVisibility(false));
 }
 
+function attachRawEvenHubEventFallback(): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  const hostWindow = window as typeof window & {
+    _listenEvenAppMessage?: (message: unknown) => void;
+    __g2TimerRawEvenHubHooked?: boolean;
+  };
+
+  if (hostWindow.__g2TimerRawEvenHubHooked || typeof hostWindow._listenEvenAppMessage !== 'function') {
+    return;
+  }
+
+  const originalListener = hostWindow._listenEvenAppMessage.bind(hostWindow);
+  hostWindow._listenEvenAppMessage = (message: unknown) => {
+    try {
+      const parsedMessage = typeof message === 'string' ? JSON.parse(message) : message;
+      const envelope = parsedMessage as { method?: string; payload?: unknown; data?: unknown } | null;
+      if (envelope?.method === 'evenHubEvent') {
+        rememberRawInteractionEvent(envelope.data ?? envelope.payload);
+      }
+    } catch (error) {
+      pushDetailedLog('[RAW]', `parse error ${String(error)}`);
+    }
+
+    originalListener(message);
+  };
+
+  hostWindow.__g2TimerRawEvenHubHooked = true;
+  pushDetailedLog('[RAW]', 'fallback attached');
+}
+
 function setupEventHandlers() {
   if (!bridge) return;
   try {
@@ -716,9 +826,11 @@ function setupEventHandlers() {
       const textEventType = event?.textEvent?.eventType;
       const sysEventType = event?.sysEvent?.eventType;
       const interactionEventType = textEventType ?? listEventType;
+      const effectiveInteractionEventType = interactionEventType ?? getRecentRawInteractionEventType();
+      const hasStructuredEvent = Boolean(event?.listEvent || event?.textEvent || event?.sysEvent || event?.audioEvent);
       pushDetailedLog(
         '[EVENT]',
-        `recv list=${String(listEventType)} text=${String(textEventType)} sys=${String(sysEventType)}`,
+        `recv list=${String(listEventType)}:${String(event?.listEvent?.containerName)} text=${String(textEventType)}:${String(event?.textEvent?.containerName)} sys=${String(sysEventType)} raw=${String(getRecentRawInteractionEventType())}`,
       );
       console.log('Even Hub event:', event);
 
@@ -746,20 +858,30 @@ function setupEventHandlers() {
 
       if (!isInForeground) return;
 
-      if (interactionEventType === OsEventTypeList.SCROLL_TOP_EVENT || sysEventType === OsEventTypeList.SCROLL_TOP_EVENT) {
+      if (!hasStructuredEvent && effectiveInteractionEventType === null) {
+        pushDetailedLog('[EVENT]', 'bare event -> singleTap');
+        handleSingleTap();
+        return;
+      }
+
+      if (effectiveInteractionEventType === OsEventTypeList.SCROLL_TOP_EVENT || sysEventType === OsEventTypeList.SCROLL_TOP_EVENT) {
+        clearRecentRawInteractionEventType();
         handleSwipe(1);
         return;
       }
-      if (interactionEventType === OsEventTypeList.SCROLL_BOTTOM_EVENT || sysEventType === OsEventTypeList.SCROLL_BOTTOM_EVENT) {
+      if (effectiveInteractionEventType === OsEventTypeList.SCROLL_BOTTOM_EVENT || sysEventType === OsEventTypeList.SCROLL_BOTTOM_EVENT) {
+        clearRecentRawInteractionEventType();
         handleSwipe(-1);
         return;
       }
-      if (interactionEventType === OsEventTypeList.DOUBLE_CLICK_EVENT || sysEventType === OsEventTypeList.DOUBLE_CLICK_EVENT) {
+      if (effectiveInteractionEventType === OsEventTypeList.DOUBLE_CLICK_EVENT || sysEventType === OsEventTypeList.DOUBLE_CLICK_EVENT) {
+        clearRecentRawInteractionEventType();
         pushDetailedLog('[EVENT]', 'doubleTap');
         handleDoubleTap();
         return;
       }
-      if (interactionEventType === OsEventTypeList.CLICK_EVENT || sysEventType === OsEventTypeList.CLICK_EVENT) {
+      if (effectiveInteractionEventType === OsEventTypeList.CLICK_EVENT || sysEventType === OsEventTypeList.CLICK_EVENT) {
+        clearRecentRawInteractionEventType();
         pushDetailedLog('[EVENT]', 'singleTap');
         handleSingleTap();
       }
@@ -894,10 +1016,12 @@ async function init() {
     pushDetailedLog('[APP]', 'init start');
     setUiDebugLogger((line) => pushDetailedLog('', line));
     attachPageLifecycleHandlers();
+    attachRawEvenHubEventFallback();
     updateRemoteView();
     bridge = await waitForEvenAppBridge();
     pushDetailedLog('[APP]', `bridge received=${Boolean(bridge)}`);
     console.log('[Boot] Bridge received');
+    attachRawEvenHubEventFallback();
     updateRemoteView();
 
     if (!bridge) {
