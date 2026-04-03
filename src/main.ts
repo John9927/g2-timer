@@ -858,8 +858,12 @@ function setupEventHandlers() {
 
       if (!isInForeground) return;
 
-      if (!hasStructuredEvent && effectiveInteractionEventType === null) {
-        pushDetailedLog('[EVENT]', 'bare event -> singleTap');
+      if (effectiveInteractionEventType === null && !sysEventType) {
+        // Either a bare event (no structured payload) or a structured event whose
+        // eventType is unrecognised / missing – treat both as a single tap from the
+        // temple button, which is the only physical gesture that can produce such an
+        // event on the G2.
+        pushDetailedLog('[EVENT]', hasStructuredEvent ? 'structured event with unknown eventType -> singleTap' : 'bare event -> singleTap');
         handleSingleTap();
         return;
       }
