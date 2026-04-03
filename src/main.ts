@@ -781,6 +781,27 @@ function attachPageLifecycleHandlers(): void {
   document.addEventListener('visibilitychange', () => syncPageVisibility(!document.hidden));
   window.addEventListener('pageshow', () => syncPageVisibility(true));
   window.addEventListener('pagehide', () => syncPageVisibility(false));
+
+  // Extra fallbacks for mobile browsers that don't reliably fire visibilitychange
+  // when the screen turns back on (e.g. Chrome on Android).
+  window.addEventListener('focus', () => {
+    if (document.hidden) return; // page is still hidden, ignore
+    syncPageVisibility(true);
+  });
+
+  // Page Lifecycle API (Chrome 68+): freeze = screen off / background kill
+  window.addEventListener('freeze', () => syncPageVisibility(false));
+  window.addEventListener('resume', () => syncPageVisibility(!document.hidden));
+
+  // Heartbeat: every 10 s, if the page is supposed to be visible but the timer
+  // hasn't been synced recently, force a foreground sync. This catches the rare
+  // cases where none of the above events fires after the screen wakes up.
+  setInterval(() => {
+    if (!document.hidden && !isPageVisible) {
+      pushDetailedLog('[PAGE]', 'heartbeat detected stale invisible state, resyncing');
+      syncPageVisibility(true);
+    }
+  }, 10_000);
 }
 
 function attachRawEvenHubEventFallback(): void {
