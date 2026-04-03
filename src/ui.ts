@@ -187,7 +187,7 @@ function buildPresetContent(selectedPreset: number, presetMinutes: number[]): st
     '',
     ...(rows.length ? rows : ['No shortcuts']),
     '',
-    'Swipe: +/-1 min',
+    'Swipe: shortcuts',
     'Tap: start',
     '2Tap: menu',
   ].join('\n');

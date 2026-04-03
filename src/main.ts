@@ -712,9 +712,14 @@ function setupEventHandlers() {
     pushDetailedLog('[EVENT]', 'setupEventHandlers attached');
     bridge.onEvenHubEvent((event: any) => {
       if (!timerState) return;
+      const listEventType = event?.listEvent?.eventType;
       const textEventType = event?.textEvent?.eventType;
       const sysEventType = event?.sysEvent?.eventType;
-      pushDetailedLog('[EVENT]', `recv text=${String(textEventType)} sys=${String(sysEventType)}`);
+      const interactionEventType = textEventType ?? listEventType;
+      pushDetailedLog(
+        '[EVENT]',
+        `recv list=${String(listEventType)} text=${String(textEventType)} sys=${String(sysEventType)}`,
+      );
       console.log('Even Hub event:', event);
 
       if (sysEventType === OsEventTypeList.FOREGROUND_ENTER_EVENT) {
@@ -741,20 +746,20 @@ function setupEventHandlers() {
 
       if (!isInForeground) return;
 
-      if (textEventType === OsEventTypeList.SCROLL_TOP_EVENT) {
+      if (interactionEventType === OsEventTypeList.SCROLL_TOP_EVENT || sysEventType === OsEventTypeList.SCROLL_TOP_EVENT) {
         handleSwipe(1);
         return;
       }
-      if (textEventType === OsEventTypeList.SCROLL_BOTTOM_EVENT) {
+      if (interactionEventType === OsEventTypeList.SCROLL_BOTTOM_EVENT || sysEventType === OsEventTypeList.SCROLL_BOTTOM_EVENT) {
         handleSwipe(-1);
         return;
       }
-      if (textEventType === OsEventTypeList.DOUBLE_CLICK_EVENT) {
+      if (interactionEventType === OsEventTypeList.DOUBLE_CLICK_EVENT || sysEventType === OsEventTypeList.DOUBLE_CLICK_EVENT) {
         pushDetailedLog('[EVENT]', 'doubleTap');
         handleDoubleTap();
         return;
       }
-      if (textEventType === OsEventTypeList.CLICK_EVENT) {
+      if (interactionEventType === OsEventTypeList.CLICK_EVENT || sysEventType === OsEventTypeList.CLICK_EVENT) {
         pushDetailedLog('[EVENT]', 'singleTap');
         handleSingleTap();
       }
@@ -845,7 +850,22 @@ function handleSwipe(dir: 1 | -1) {
     return;
   }
 
-  if (dir === 1) timerState.cyclePreset(); else timerState.cyclePresetBackward();
+  const presetMinutes = activePresetMinutes();
+  if (!presetMinutes.length) {
+    if (dir === 1) timerState.cyclePreset(); else timerState.cyclePresetBackward();
+    return;
+  }
+
+  const currentPreset = timerState.getSelectedPreset();
+  const currentIndex = presetMinutes.indexOf(currentPreset);
+
+  if (currentIndex >= 0) {
+    const nextIndex = (currentIndex + (dir === 1 ? 1 : -1) + presetMinutes.length) % presetMinutes.length;
+    timerState.setPreset(presetMinutes[nextIndex]);
+    return;
+  }
+
+  timerState.setPreset(dir === 1 ? presetMinutes[0] : presetMinutes[presetMinutes.length - 1]);
 }
 
 // ── Bootstrap ─────────────────────────────────────────────────────
