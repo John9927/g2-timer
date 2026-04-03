@@ -1041,6 +1041,8 @@ async function init() {
       const restoredLocalTimerSnapshot = await loadTimerRuntimeSnapshot(null);
       if (restoredLocalTimerSnapshot) {
         timerState.restoreFromSnapshot(restoredLocalTimerSnapshot);
+        glassesPanel = 'home';
+        homeSelection = 'timer';
         pushDetailedLog(
           '[STATE]',
           `restored local state=${timerState.getState()} preset=${timerState.getSelectedPreset()} remaining=${timerState.getRemainingSeconds()}s`,
@@ -1067,6 +1069,8 @@ async function init() {
     const restoredTimerSnapshot = await loadTimerRuntimeSnapshot(bridge);
     if (restoredTimerSnapshot) {
       timerState.restoreFromSnapshot(restoredTimerSnapshot);
+      glassesPanel = 'home';
+      homeSelection = 'timer';
       pushDetailedLog(
         '[STATE]',
         `restored state=${timerState.getState()} preset=${timerState.getSelectedPreset()} remaining=${timerState.getRemainingSeconds()}s`,
