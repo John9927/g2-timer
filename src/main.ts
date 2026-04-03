@@ -20,6 +20,14 @@ import {
   type TimerLayoutField,
   type TimerLayoutSettings,
 } from './layoutSettings';
+import {
+  DEFAULT_TIMER_PRESET_SETTINGS,
+  loadTimerPresetSettings,
+  parseCustomPresetInput,
+  saveTimerPresetSettings,
+  type TimerPresetSettings,
+} from './presetSettings';
+import { loadTimerRuntimeSnapshot, saveTimerRuntimeSnapshot } from './timerStorage';
 
 const REMOTE_START_DELAY_MS = 3000;
 const REMOTE_START_COUNTDOWN_INTERVAL_MS = 1000;
@@ -28,11 +36,13 @@ let bridge: any = null;
 let timerState: TimerStateManager | null = null;
 let isInitialized = false;
 let isInForeground = true;
+let isPageVisible = typeof document === 'undefined' ? true : !document.hidden;
 
 let remoteStartTimeoutId: ReturnType<typeof setTimeout> | null = null;
 let remoteStartCountdownIntervalId: ReturnType<typeof setInterval> | null = null;
 let remoteStartScheduledAt: number | null = null;
 let committedLayoutSettings: TimerLayoutSettings = DEFAULT_TIMER_LAYOUT_SETTINGS;
+let committedPresetSettings: TimerPresetSettings = DEFAULT_TIMER_PRESET_SETTINGS;
 let glassesPanel: GlassesPanel = 'home';
 let homeSelection: HomeSelection = 'timer';
 let settingsField: TimerLayoutField = 'format';
@@ -55,6 +65,7 @@ let telemetryMaxQueueDepth = 0;
 let estimatedFixedTickDelayMs = DISPLAY_LEAD_DEFAULT_MS;
 let displayTickIntervalId: ReturnType<typeof setInterval> | null = null;
 let lastDisplayTickSecondSent: number | null = null;
+let lastRenderedPresetButtonsSignature = '';
 
 function getTelemetrySummaryEl(): HTMLElement | null {
   return document.getElementById('telemetry-summary');
@@ -119,6 +130,10 @@ function pushDetailedLog(source: string, message: string): void {
 
 function activeLayoutSettings(): TimerLayoutSettings {
   return committedLayoutSettings;
+}
+
+function activePresetMinutes(): number[] {
+  return committedPresetSettings.customPresets;
 }
 
 function isIdleOnGlasses(): boolean {
@@ -190,6 +205,19 @@ function persistCurrentLayoutSettings(): void {
   });
 }
 
+function persistCurrentPresetSettings(): void {
+  void saveTimerPresetSettings(committedPresetSettings, bridge).catch((error) => {
+    pushDetailedLog('[PRESET]', `persist error ${String(error)}`);
+  });
+}
+
+function persistCurrentTimerState(): void {
+  if (!timerState) return;
+  void saveTimerRuntimeSnapshot(timerState.getSnapshot(), bridge).catch((error) => {
+    pushDetailedLog('[STATE]', `persist error ${String(error)}`);
+  });
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
@@ -215,7 +243,7 @@ function stopDisplayTicker(): void {
 function startDisplayTicker(): void {
   if (displayTickIntervalId !== null) return;
   displayTickIntervalId = setInterval(() => {
-    if (!bridge || !timerState || !isInForeground) return;
+    if (!bridge || !timerState || !isInForeground || !isPageVisible) return;
     if (timerState.getState() !== TimerState.RUNNING) return;
 
     const displaySecond = timerState.getDisplayRemainingSeconds(estimatedFixedTickDelayMs);
@@ -318,7 +346,24 @@ function getDisplaySummary(): string {
   return `Home menu · ${homeSelection === 'timer' ? 'Timer' : 'Layout settings'}`;
 }
 
+function ensurePresetButtonsRendered(): void {
+  const container = document.getElementById('remote-preset-buttons');
+  if (!container) return;
+
+  const signature = activePresetMinutes().join(',');
+  if (signature === lastRenderedPresetButtonsSignature) {
+    return;
+  }
+
+  container.innerHTML = activePresetMinutes()
+    .map((preset) => `<button type="button" class="preset-btn" data-preset="${preset}">${preset}</button>`)
+    .join('');
+
+  lastRenderedPresetButtonsSignature = signature;
+}
+
 function updateRemoteView() {
+  ensurePresetButtonsRendered();
   const status = document.getElementById('remote-status');
   const btnStart = document.getElementById('btn-start-pause') as HTMLButtonElement | null;
   const btnReset = document.getElementById('btn-reset') as HTMLButtonElement | null;
@@ -326,6 +371,10 @@ function updateRemoteView() {
   const displaySummary = document.getElementById('glasses-view-summary');
   const screenBtns = document.querySelectorAll('#remote-screen-buttons .screen-btn');
   const layoutBtns = document.querySelectorAll('#layout-controls .layout-btn');
+  const exactMinuteInput = document.getElementById('exact-minute-input') as HTMLInputElement | null;
+  const customPresetsInput = document.getElementById('custom-presets-input') as HTMLInputElement | null;
+  const applyMinuteBtn = document.getElementById('apply-minute-btn') as HTMLButtonElement | null;
+  const saveCustomPresetsBtn = document.getElementById('save-custom-presets') as HTMLButtonElement | null;
 
   const connected = !!(bridge && timerState);
   if (status) {
@@ -336,6 +385,16 @@ function updateRemoteView() {
   }
   if (displaySummary) {
     displaySummary.textContent = getDisplaySummary();
+  }
+
+  if (customPresetsInput && document.activeElement !== customPresetsInput) {
+    customPresetsInput.value = activePresetMinutes().join(', ');
+  }
+  if (customPresetsInput) {
+    customPresetsInput.disabled = !connected;
+  }
+  if (saveCustomPresetsBtn) {
+    saveCustomPresetsBtn.disabled = !connected;
   }
 
   const pending = remoteStartScheduledAt !== null;
@@ -350,6 +409,15 @@ function updateRemoteView() {
       b.classList.toggle('selected', p === preset);
       (b as HTMLButtonElement).disabled = !canEditPreset;
     });
+    if (exactMinuteInput && document.activeElement !== exactMinuteInput) {
+      exactMinuteInput.value = String(preset);
+    }
+    if (exactMinuteInput) {
+      exactMinuteInput.disabled = !canEditPreset;
+    }
+    if (applyMinuteBtn) {
+      applyMinuteBtn.disabled = !canEditPreset;
+    }
     screenBtns.forEach((button) => {
       const target = (button as HTMLElement).dataset.screen || '';
       const isCurrent = target === currentPanel;
@@ -383,6 +451,9 @@ function updateRemoteView() {
     presetBtns.forEach(b => { b.classList.remove('selected'); (b as HTMLButtonElement).disabled = true; });
     screenBtns.forEach((button) => { button.classList.remove('selected'); (button as HTMLButtonElement).disabled = true; });
     layoutBtns.forEach((button) => { button.classList.remove('selected'); (button as HTMLButtonElement).disabled = true; });
+    if (exactMinuteInput && document.activeElement !== exactMinuteInput) exactMinuteInput.value = '';
+    if (exactMinuteInput) exactMinuteInput.disabled = true;
+    if (applyMinuteBtn) applyMinuteBtn.disabled = true;
     if (btnStart) { btnStart.disabled = true; btnStart.textContent = 'Start'; }
     if (btnReset) btnReset.disabled = true;
   }
@@ -391,8 +462,11 @@ function updateRemoteView() {
 // ── Fire-and-forget glasses render (never awaited, never blocks) ──
 // Send every tick so display updates every 1s; overlapping pushes allowed.
 function sendToGlasses(reason: RenderReason = 'tick') {
-  if (!isInForeground || !bridge || !timerState) {
-    pushDetailedLog('[RENDER]', `skip reason=${reason} foreground=${isInForeground} bridge=${Boolean(bridge)} stateMgr=${Boolean(timerState)}`);
+  if (!isInForeground || !isPageVisible || !bridge || !timerState) {
+    pushDetailedLog(
+      '[RENDER]',
+      `skip reason=${reason} foreground=${isInForeground} pageVisible=${isPageVisible} bridge=${Boolean(bridge)} stateMgr=${Boolean(timerState)}`,
+    );
     return;
   }
   const state = timerState.getState();
@@ -413,6 +487,7 @@ function sendToGlasses(reason: RenderReason = 'tick') {
     {
       layoutSettings: activeLayoutSettings(),
       navigation: currentNavigationState(),
+      presetMinutes: activePresetMinutes(),
     },
   ).then(() => {
     const elapsedMs = performance.now() - startedAt;
@@ -427,8 +502,11 @@ function sendToGlasses(reason: RenderReason = 'tick') {
 }
 
 function sendToGlassesImmediate(reason: RenderReason = 'manual') {
-  if (!bridge || !timerState) {
-    pushDetailedLog('[RENDER]', `skip-immediate reason=${reason} bridge=${Boolean(bridge)} stateMgr=${Boolean(timerState)}`);
+  if (!isPageVisible || !bridge || !timerState) {
+    pushDetailedLog(
+      '[RENDER]',
+      `skip-immediate reason=${reason} pageVisible=${isPageVisible} bridge=${Boolean(bridge)} stateMgr=${Boolean(timerState)}`,
+    );
     return;
   }
   const state = timerState.getState();
@@ -449,6 +527,7 @@ function sendToGlassesImmediate(reason: RenderReason = 'manual') {
     {
       layoutSettings: activeLayoutSettings(),
       navigation: currentNavigationState(),
+      presetMinutes: activePresetMinutes(),
     },
   ).then(() => {
     const elapsedMs = performance.now() - startedAt;
@@ -466,10 +545,22 @@ function sendToGlassesImmediate(reason: RenderReason = 'manual') {
 function setupRemoteControl() {
   const btnStart = document.getElementById('btn-start-pause');
   const btnReset = document.getElementById('btn-reset');
-  const presetBtns = document.querySelectorAll('#remote-preset-buttons .preset-btn');
+  const presetButtonsContainer = document.getElementById('remote-preset-buttons');
   const screenBtns = document.querySelectorAll('#remote-screen-buttons .screen-btn');
   const layoutBtns = document.querySelectorAll('#layout-controls .layout-btn');
-  pushDetailedLog('[REMOTE]', `setupRemoteControl presets=${presetBtns.length}`);
+  const exactMinuteInput = document.getElementById('exact-minute-input') as HTMLInputElement | null;
+  const applyMinuteBtn = document.getElementById('apply-minute-btn');
+  const customPresetsInput = document.getElementById('custom-presets-input') as HTMLInputElement | null;
+  const saveCustomPresetsBtn = document.getElementById('save-custom-presets');
+  pushDetailedLog('[REMOTE]', `setupRemoteControl presets=${activePresetMinutes().length}`);
+
+  const applyPreset = (minutes: number) => {
+    if (!timerState || !bridge) return;
+    pushDetailedLog('[REMOTE]', `preset apply ${minutes}`);
+    glassesPanel = 'timer';
+    homeSelection = 'timer';
+    timerState.setPreset(minutes);
+  };
 
   btnStart?.addEventListener('click', () => {
     if (!timerState || !bridge) return;
@@ -504,15 +595,39 @@ function setupRemoteControl() {
     timerState.resetToPreset();
   });
 
-  presetBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
-      const min = parseInt((btn as HTMLElement).dataset.preset || '', 10);
-      if (!timerState || !bridge || !min) return;
-      pushDetailedLog('[REMOTE]', `preset click ${min}`);
-      glassesPanel = 'timer';
-      homeSelection = 'timer';
-      timerState.setPreset(min);
-    });
+  presetButtonsContainer?.addEventListener('click', (event) => {
+    const target = (event.target as HTMLElement | null)?.closest('.preset-btn') as HTMLElement | null;
+    const min = parseInt(target?.dataset.preset || '', 10);
+    if (!target || !min) return;
+    applyPreset(min);
+  });
+
+  applyMinuteBtn?.addEventListener('click', () => {
+    if (!exactMinuteInput) return;
+    if (!exactMinuteInput.value.trim()) return;
+    const min = Number(exactMinuteInput.value);
+    if (!Number.isFinite(min)) return;
+    applyPreset(min);
+  });
+
+  exactMinuteInput?.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    applyMinuteBtn?.dispatchEvent(new Event('click'));
+  });
+
+  saveCustomPresetsBtn?.addEventListener('click', () => {
+    if (!customPresetsInput) return;
+
+    const nextPresets = parseCustomPresetInput(customPresetsInput.value);
+    committedPresetSettings = {
+      customPresets: nextPresets,
+    };
+    lastRenderedPresetButtonsSignature = '';
+    pushDetailedLog('[PRESET]', `saved shortcuts=${nextPresets.join('/')}`);
+    persistCurrentPresetSettings();
+    updateRemoteView();
+    sendToGlassesImmediate('manual');
   });
   screenBtns.forEach((button) => {
     button.addEventListener('click', () => {
@@ -560,12 +675,43 @@ let lastSwipeTime = 0;
 const SWIPE_COOLDOWN_MS = 300;
 
 // ── Event handlers for glasses ────────────────────────────────────
+function syncPageVisibility(nextVisible: boolean): void {
+  isPageVisible = nextVisible;
+  pushDetailedLog('[PAGE]', `visibility visible=${isPageVisible}`);
+
+  if (!timerState) {
+    return;
+  }
+
+  if (!isPageVisible) {
+    persistCurrentTimerState();
+    timerState.handleBackground();
+    stopDisplayTicker();
+    return;
+  }
+
+  timerState.handleForeground();
+  syncDisplayTickerWithState(timerState.getState());
+  updateRemoteView();
+  persistCurrentTimerState();
+
+  if (bridge && isInForeground) {
+    sendToGlassesImmediate('foreground');
+  }
+}
+
+function attachPageLifecycleHandlers(): void {
+  document.addEventListener('visibilitychange', () => syncPageVisibility(!document.hidden));
+  window.addEventListener('pageshow', () => syncPageVisibility(true));
+  window.addEventListener('pagehide', () => syncPageVisibility(false));
+}
+
 function setupEventHandlers() {
   if (!bridge) return;
   try {
     pushDetailedLog('[EVENT]', 'setupEventHandlers attached');
     bridge.onEvenHubEvent((event: any) => {
-      if (!timerState || !isInForeground) return;
+      if (!timerState) return;
       const textEventType = event?.textEvent?.eventType;
       const sysEventType = event?.sysEvent?.eventType;
       pushDetailedLog('[EVENT]', `recv text=${String(textEventType)} sys=${String(sysEventType)}`);
@@ -575,15 +721,25 @@ function setupEventHandlers() {
         isInForeground = true;
         pushDetailedLog('[EVENT]', 'enterForeground');
         timerState.handleForeground();
-        sendToGlassesImmediate('foreground');
+        syncDisplayTickerWithState(timerState.getState());
+        updateRemoteView();
+        persistCurrentTimerState();
+        if (isPageVisible) {
+          sendToGlassesImmediate('foreground');
+        }
         return;
       }
       if (sysEventType === OsEventTypeList.FOREGROUND_EXIT_EVENT) {
         pushDetailedLog('[EVENT]', 'exitForeground');
         isInForeground = false;
         timerState.handleBackground();
+        stopDisplayTicker();
+        persistCurrentTimerState();
+        updateRemoteView();
         return;
       }
+
+      if (!isInForeground) return;
 
       if (textEventType === OsEventTypeList.SCROLL_TOP_EVENT) {
         handleSwipe(1);
@@ -693,10 +849,31 @@ function handleSwipe(dir: 1 | -1) {
 }
 
 // ── Bootstrap ─────────────────────────────────────────────────────
+function attachTimerStateCallbacks(): void {
+  if (!timerState) return;
+
+  timerState.setOnUpdate(() => {
+    pushDetailedLog('[CALLBACK]', `onUpdate state=${timerState?.getState()} t=${timerState ? formatTime(timerState.getRemainingSeconds()) : '--:--'}`);
+    updateRemoteView();
+  });
+
+  timerState.setOnStateChange(() => {
+    const state = timerState?.getState();
+    pushDetailedLog('[CALLBACK]', `onStateChange state=${state} t=${timerState ? formatTime(timerState.getRemainingSeconds()) : '--:--'}`);
+    updateRemoteView();
+    persistCurrentTimerState();
+    if (state) {
+      syncDisplayTickerWithState(state);
+    }
+    sendToGlassesImmediate('state');
+  });
+}
+
 async function init() {
   try {
     pushDetailedLog('[APP]', 'init start');
     setUiDebugLogger((line) => pushDetailedLog('', line));
+    attachPageLifecycleHandlers();
     updateRemoteView();
     bridge = await waitForEvenAppBridge();
     pushDetailedLog('[APP]', `bridge received=${Boolean(bridge)}`);
@@ -708,45 +885,57 @@ async function init() {
       console.error('[Boot] Bridge not available');
       const s = document.getElementById('remote-status');
       if (s) { s.textContent = 'Connection unavailable'; s.className = 'error'; }
+      committedPresetSettings = await loadTimerPresetSettings(null);
+      pushDetailedLog('[PRESET]', `loaded local shortcuts=${activePresetMinutes().join('/')}`);
       timerState = new TimerStateManager();
       timerState.setOnDebugLog((line) => pushDetailedLog('', line));
+      attachTimerStateCallbacks();
+      const restoredLocalTimerSnapshot = await loadTimerRuntimeSnapshot(null);
+      if (restoredLocalTimerSnapshot) {
+        timerState.restoreFromSnapshot(restoredLocalTimerSnapshot);
+        pushDetailedLog(
+          '[STATE]',
+          `restored local state=${timerState.getState()} preset=${timerState.getSelectedPreset()} remaining=${timerState.getRemainingSeconds()}s`,
+        );
+        persistCurrentTimerState();
+      }
       setupRemoteControl();
       updateRemoteView();
       return;
     }
 
     committedLayoutSettings = await loadTimerLayoutSettings(bridge);
+    committedPresetSettings = await loadTimerPresetSettings(bridge);
     pushDetailedLog(
       '[LAYOUT]',
       `loaded format=${committedLayoutSettings.format} vertical=${committedLayoutSettings.vertical} horizontal=${committedLayoutSettings.horizontal}`,
     );
+    pushDetailedLog('[PRESET]', `loaded shortcuts=${activePresetMinutes().join('/')}`);
 
     timerState = new TimerStateManager();
     timerState.setOnDebugLog((line) => pushDetailedLog('', line));
+    attachTimerStateCallbacks();
+
+    const restoredTimerSnapshot = await loadTimerRuntimeSnapshot(bridge);
+    if (restoredTimerSnapshot) {
+      timerState.restoreFromSnapshot(restoredTimerSnapshot);
+      pushDetailedLog(
+        '[STATE]',
+        `restored state=${timerState.getState()} preset=${timerState.getSelectedPreset()} remaining=${timerState.getRemainingSeconds()}s`,
+      );
+      persistCurrentTimerState();
+    } else {
+      pushDetailedLog('[STATE]', 'no persisted timer state found');
+    }
+
     setupRemoteControl();
-
-    // Every timer tick: phone UI updates instantly, glasses get a render if idle
-    timerState.setOnUpdate(() => {
-      pushDetailedLog('[CALLBACK]', `onUpdate state=${timerState?.getState()} t=${timerState ? formatTime(timerState.getRemainingSeconds()) : '--:--'}`);
-      updateRemoteView();
-    });
-
-    // State transitions (start/pause/done): always push to glasses immediately
-    timerState.setOnStateChange(() => {
-      const state = timerState?.getState();
-      pushDetailedLog('[CALLBACK]', `onStateChange state=${state} t=${timerState ? formatTime(timerState.getRemainingSeconds()) : '--:--'}`);
-      updateRemoteView();
-      if (state) {
-        syncDisplayTickerWithState(state);
-      }
-      sendToGlassesImmediate('state');
-    });
 
     const ok = await createPageContainers(
       bridge,
-      TimerState.IDLE,
+      timerState.getState(),
       timerState.getSelectedPreset(),
       committedLayoutSettings,
+      activePresetMinutes(),
       currentNavigationState(),
     );
     pushDetailedLog('[APP]', `createPageContainers ok=${ok}`);
@@ -756,6 +945,7 @@ async function init() {
         debugMessage: 'ERROR: container creation failed',
         layoutSettings: committedLayoutSettings,
         navigation: currentNavigationState(),
+        presetMinutes: activePresetMinutes(),
       });
       const s = document.getElementById('remote-status');
       if (s) { s.textContent = 'Display creation error'; s.className = 'error'; }
@@ -763,9 +953,10 @@ async function init() {
     }
 
     setupEventHandlers();
-    await renderUI(bridge, TimerState.IDLE, timerState.getSelectedPreset(), timerState.getRemainingSeconds(), true, {
+    await renderUI(bridge, timerState.getState(), timerState.getSelectedPreset(), timerState.getRemainingSeconds(), true, {
       layoutSettings: committedLayoutSettings,
       navigation: currentNavigationState(),
+      presetMinutes: activePresetMinutes(),
     });
     pushDetailedLog('[APP]', 'initial render complete');
     syncDisplayTickerWithState(timerState.getState());
@@ -783,6 +974,7 @@ window.addEventListener('beforeunload', () => {
   pushDetailedLog('[APP]', 'beforeunload');
   stopDisplayTicker();
   clearRemoteStartPending();
+  persistCurrentTimerState();
   if (bridge && isInitialized) {
     try { bridge.shutDownPageContainer(0); } catch {}
   }

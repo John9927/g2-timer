@@ -20,6 +20,7 @@ interface RenderUiOptions {
   debugMessage?: string;
   layoutSettings?: TimerLayoutSettings;
   navigation?: GlassesNavigationState;
+  presetMinutes?: number[];
 }
 
 export type GlassesPanel = 'home' | 'timer' | 'settings';
@@ -159,20 +160,34 @@ function timeStringToSeconds(time: string): number {
   return minutes * 60 + seconds;
 }
 
-function buildPresetContent(selectedPreset: number): string {
+function buildPresetRows(presetMinutes: number[], selectedPreset: number): string[] {
+  const rows: string[] = [];
+  const visiblePresets = presetMinutes.slice(0, 8);
+
+  for (let index = 0; index < visiblePresets.length; index += 4) {
+    const row = visiblePresets
+      .slice(index, index + 4)
+      .map((preset) => (preset === selectedPreset ? `[${preset}]` : `${preset}`))
+      .join('  ');
+
+    rows.push(row);
+  }
+
+  return rows;
+}
+
+function buildPresetContent(selectedPreset: number, presetMinutes: number[]): string {
   const minutes = String(Math.min(99, Math.max(0, selectedPreset))).padStart(2, '0');
-  const rowA = [1, 3, 5, 10].map((preset) => (preset === selectedPreset ? `[${preset}]` : `${preset}`)).join('  ');
-  const rowB = [15, 30, 60].map((preset) => (preset === selectedPreset ? `[${preset}]` : `${preset}`)).join('  ');
+  const rows = buildPresetRows(presetMinutes, selectedPreset);
 
   return [
     'G2 Timer',
     '',
     `Minutes: ${minutes}`,
     '',
-    rowA,
-    rowB,
+    ...(rows.length ? rows : ['No shortcuts']),
     '',
-    'Swipe: preset',
+    'Swipe: +/-1 min',
     'Tap: start',
     '2Tap: menu',
   ].join('\n');
@@ -458,6 +473,7 @@ function buildInitialDisplayContent(
   screen: UiScreenMode,
   state: TimerState,
   selectedPreset: number,
+  presetMinutes: number[],
   remainingSeconds: number,
   blinkVisible: boolean,
   navigation: GlassesNavigationState,
@@ -468,7 +484,7 @@ function buildInitialDisplayContent(
   }
 
   if (screen === 'preset') {
-    return buildPresetContent(selectedPreset);
+    return buildPresetContent(selectedPreset, presetMinutes);
   }
 
   if (screen === 'settings') {
@@ -723,6 +739,7 @@ export async function renderUI(
     homeSelection: 'timer',
     settingsField: 'format',
   };
+  const presetMinutes = options.presetMinutes ?? [];
 
   try {
     if (options.debugMessage) {
@@ -739,6 +756,7 @@ export async function renderUI(
         screen,
         state,
         selectedPreset,
+        presetMinutes,
         remainingSeconds,
         blinkVisible,
         navigation,
@@ -770,6 +788,7 @@ export async function createPageContainers(
   state: TimerState,
   selectedPreset = 5,
   layoutSettings: TimerLayoutSettings = DEFAULT_TIMER_LAYOUT_SETTINGS,
+  presetMinutes: number[] = [],
   navigation: GlassesNavigationState = {
     panel: 'home',
     homeSelection: 'timer',
@@ -782,7 +801,16 @@ export async function createPageContainers(
   }
 
   const screen = desiredScreenMode(state, navigation, layoutSettings);
-  const content = buildInitialDisplayContent(screen, state, selectedPreset, selectedPreset * 60, true, navigation, layoutSettings);
+  const content = buildInitialDisplayContent(
+    screen,
+    state,
+    selectedPreset,
+    presetMinutes,
+    selectedPreset * 60,
+    true,
+    navigation,
+    layoutSettings,
+  );
   const ok = await ensurePageLayout(bridge, screen, layoutSettings, content);
   if (!ok) {
     return false;

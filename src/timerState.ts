@@ -1,4 +1,13 @@
-import { PRESETS, TimerState, UPDATE_INTERVAL_MS, BLINK_INTERVAL_MS, BLINK_DURATION_MS } from './constants';
+import {
+  BLINK_DURATION_MS,
+  BLINK_INTERVAL_MS,
+  DEFAULT_PRESET_MINUTES,
+  MAX_PRESET_MINUTES,
+  MIN_PRESET_MINUTES,
+  TimerState,
+  UPDATE_INTERVAL_MS,
+} from './constants';
+import type { TimerRuntimeSnapshot } from './timerStorage';
 
 export type TimerDebugLogFn = (line: string) => void;
 
@@ -16,8 +25,8 @@ export interface TimerStateData {
 export class TimerStateManager {
   private data: TimerStateData = {
     state: TimerState.IDLE,
-    selectedPreset: 5, // Default to 5 minutes
-    remainingSeconds: 5 * 60,
+    selectedPreset: DEFAULT_PRESET_MINUTES,
+    remainingSeconds: DEFAULT_PRESET_MINUTES * 60,
     intervalId: null,
     endTimestamp: null,
     blinkIntervalId: null,
@@ -86,34 +95,99 @@ export class TimerStateManager {
     return true; // Always visible when not blinking
   }
 
+  private normalizePresetMinutes(minutes: number): number {
+    if (!Number.isFinite(minutes)) {
+      return DEFAULT_PRESET_MINUTES;
+    }
+
+    return Math.min(MAX_PRESET_MINUTES, Math.max(MIN_PRESET_MINUTES, Math.round(minutes)));
+  }
+
+  getSnapshot(): TimerRuntimeSnapshot {
+    const remainingSeconds = this.data.state === TimerState.RUNNING && this.data.endTimestamp !== null
+      ? Math.max(0, Math.ceil((this.data.endTimestamp - Date.now()) / 1000))
+      : this.data.remainingSeconds;
+
+    return {
+      state: this.data.state,
+      selectedPreset: this.data.selectedPreset,
+      remainingSeconds,
+      endTimestamp: this.data.endTimestamp,
+      savedAt: Date.now(),
+    };
+  }
+
+  restoreFromSnapshot(snapshot: TimerRuntimeSnapshot): void {
+    this.stopInterval();
+    this.stopBlink();
+
+    this.data.selectedPreset = this.normalizePresetMinutes(snapshot.selectedPreset);
+    this.data.endTimestamp = null;
+
+    if (snapshot.state === TimerState.RUNNING) {
+      const restoredEndTimestamp = snapshot.endTimestamp ?? (snapshot.savedAt + snapshot.remainingSeconds * 1000);
+      const restoredRemaining = Math.max(0, Math.ceil((restoredEndTimestamp - Date.now()) / 1000));
+
+      if (restoredRemaining <= 0) {
+        this.data.state = TimerState.DONE;
+        this.data.remainingSeconds = 0;
+        this.debug('restoreFromSnapshot RUNNING -> DONE (expired while app was inactive)');
+        return;
+      }
+
+      this.data.state = TimerState.RUNNING;
+      this.data.endTimestamp = restoredEndTimestamp;
+      this.data.remainingSeconds = restoredRemaining;
+      this.debug(`restoreFromSnapshot RUNNING remaining=${restoredRemaining}s endTimestamp=${restoredEndTimestamp}`);
+      this.startInterval();
+      return;
+    }
+
+    if (snapshot.state === TimerState.PAUSED) {
+      const pausedRemaining = Math.max(0, snapshot.remainingSeconds);
+      this.data.state = pausedRemaining > 0 ? TimerState.PAUSED : TimerState.DONE;
+      this.data.remainingSeconds = pausedRemaining;
+      this.debug(`restoreFromSnapshot ${this.data.state} remaining=${pausedRemaining}s`);
+      return;
+    }
+
+    if (snapshot.state === TimerState.DONE) {
+      this.data.state = TimerState.DONE;
+      this.data.remainingSeconds = 0;
+      this.debug('restoreFromSnapshot DONE');
+      return;
+    }
+
+    this.data.state = TimerState.IDLE;
+    this.data.remainingSeconds = this.data.selectedPreset * 60;
+    this.debug(`restoreFromSnapshot IDLE preset=${this.data.selectedPreset} remaining=${this.data.remainingSeconds}s`);
+  }
+
   cyclePreset(): void {
     const previous = this.data.selectedPreset;
-    const currentIndex = PRESETS.indexOf(this.data.selectedPreset as typeof PRESETS[number]);
-    const nextIndex = (currentIndex + 1) % PRESETS.length;
-    this.data.selectedPreset = PRESETS[nextIndex];
+    this.data.selectedPreset = this.data.selectedPreset >= MAX_PRESET_MINUTES
+      ? MIN_PRESET_MINUTES
+      : this.data.selectedPreset + 1;
     this.debug(`cyclePreset ${previous} -> ${this.data.selectedPreset}`);
     this.resetToPreset();
   }
 
   cyclePresetBackward(): void {
     const previous = this.data.selectedPreset;
-    const currentIndex = PRESETS.indexOf(this.data.selectedPreset as typeof PRESETS[number]);
-    const prevIndex = currentIndex === 0 ? PRESETS.length - 1 : currentIndex - 1;
-    this.data.selectedPreset = PRESETS[prevIndex];
+    this.data.selectedPreset = this.data.selectedPreset <= MIN_PRESET_MINUTES
+      ? MAX_PRESET_MINUTES
+      : this.data.selectedPreset - 1;
     this.debug(`cyclePresetBackward ${previous} -> ${this.data.selectedPreset}`);
     this.resetToPreset();
   }
 
-  /** Set preset directly (only values in PRESETS). */
+  /** Set preset directly (supports any whole minute value within bounds). */
   setPreset(minutes: number): void {
-    if (PRESETS.includes(minutes as (typeof PRESETS)[number])) {
-      const previous = this.data.selectedPreset;
-      this.data.selectedPreset = minutes;
-      this.debug(`setPreset ${previous} -> ${minutes}`);
-      this.resetToPreset();
-      return;
-    }
-    this.debug(`setPreset ignored invalid value=${minutes}`);
+    const normalized = this.normalizePresetMinutes(minutes);
+    const previous = this.data.selectedPreset;
+    this.data.selectedPreset = normalized;
+    this.debug(`setPreset ${previous} -> ${normalized}`);
+    this.resetToPreset();
   }
 
   resetToPreset(): void {

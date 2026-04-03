@@ -79,6 +79,56 @@
         flex-wrap: wrap;
         gap: 8px;
       }
+      .preset-tools {
+        margin-top: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .field-row {
+        display: flex;
+        gap: 8px;
+      }
+      .preset-input {
+        flex: 1;
+        min-width: 0;
+        padding: 12px 12px;
+        font-size: 0.95rem;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--card);
+        color: var(--text);
+      }
+      .preset-input:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      .inline-btn {
+        flex: 0 0 auto;
+        padding: 12px 14px;
+        font-size: 0.9rem;
+        font-weight: 600;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--card);
+        color: var(--text);
+        cursor: pointer;
+      }
+      .inline-btn:hover:not(:disabled),
+      .inline-btn:active:not(:disabled) {
+        background: var(--bg-subtle);
+        border-color: var(--text-muted);
+      }
+      .inline-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      .helper-text {
+        margin: -2px 2px 0;
+        font-size: 0.75rem;
+        line-height: 1.35;
+        color: var(--text-muted);
+      }
       .preset-btn,
       .screen-btn,
       .layout-btn {
@@ -255,6 +305,18 @@
           <button type="button" class="preset-btn" data-preset="15">15</button>
           <button type="button" class="preset-btn" data-preset="30">30</button>
           <button type="button" class="preset-btn" data-preset="60">60</button>
+        </div>
+        <div class="preset-tools">
+          <div class="field-row">
+            <input id="exact-minute-input" class="preset-input" type="number" min="1" max="99" inputmode="numeric" placeholder="Exact minutes" />
+            <button type="button" id="apply-minute-btn" class="inline-btn">Apply</button>
+          </div>
+          <div class="helper-text">Pick any duration from 1 to 99 minutes.</div>
+          <div class="field-row">
+            <input id="custom-presets-input" class="preset-input" type="text" placeholder="2, 5, 10, 15" />
+            <button type="button" id="save-custom-presets" class="inline-btn">Save</button>
+          </div>
+          <div class="helper-text">Comma-separated shortcuts shown in the buttons above, up to 8 values.</div>
         </div>
       </div>
       <div class="card" id="layout-controls">

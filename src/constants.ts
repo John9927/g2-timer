@@ -2,7 +2,12 @@
 export const CANVAS_WIDTH = 576;
 export const CANVAS_HEIGHT = 288;
 
-// Timer presets in minutes
+// Timer preset boundaries in minutes
+export const MIN_PRESET_MINUTES = 1;
+export const MAX_PRESET_MINUTES = 99;
+export const DEFAULT_PRESET_MINUTES = 5;
+
+// Default shortcut presets shown in the remote UI
 export const PRESETS = [1, 3, 5, 10, 15, 30, 60] as const;
 
 // Container IDs and names (IDs must be numeric)
