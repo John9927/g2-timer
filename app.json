@@ -1,8 +1,8 @@
 {
-  "package_id": "com.giova.g2timer",
+  "package_id": "com.giova.timer",
   "edition": "202601",
   "name": "G2 Timer",
-  "version": "0.0.3",
+  "version": "1.0.2",
   "min_app_version": "2.0.0",
   "min_sdk_version": "0.0.7",
   "tagline": "Minimal countdown timer for Even G2",

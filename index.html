@@ -300,6 +300,7 @@
           <button type="button" class="screen-btn" data-screen="timer">Timer</button>
           <button type="button" class="screen-btn" data-screen="settings">Settings</button>
         </div>
+        <div id="remote-gesture-help" class="helper-text">Glasses controls load after connection.</div>
       </div>
       <div class="card" id="remote-preset-section">
         <label>Duration (minutes)</label>
@@ -314,10 +315,10 @@
         </div>
         <div class="preset-tools">
           <div class="field-row">
-            <input id="exact-minute-input" class="preset-input" type="number" min="1" max="99" inputmode="numeric" placeholder="Exact minutes" />
+            <input id="exact-minute-input" class="preset-input" type="number" min="1" max="999" inputmode="numeric" placeholder="Exact minutes" />
             <button type="button" id="apply-minute-btn" class="inline-btn">Apply</button>
           </div>
-          <div class="helper-text">Pick any duration from 1 to 99 minutes.</div>
+          <div class="helper-text">Pick any duration from 1 to 999 minutes.</div>
           <div class="field-row">
             <input id="custom-presets-input" class="preset-input" type="text" placeholder="2, 5, 10, 15" />
             <button type="button" id="save-custom-presets" class="inline-btn">Save</button>

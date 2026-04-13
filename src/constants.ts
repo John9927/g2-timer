@@ -4,7 +4,7 @@ export const CANVAS_HEIGHT = 288;
 
 // Timer preset boundaries in minutes
 export const MIN_PRESET_MINUTES = 1;
-export const MAX_PRESET_MINUTES = 99;
+export const MAX_PRESET_MINUTES = 999;
 export const DEFAULT_PRESET_MINUTES = 5;
 
 // Default shortcut presets shown in the remote UI

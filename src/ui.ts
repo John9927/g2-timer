@@ -50,26 +50,34 @@ const DIGIT_SCALE = 10;
 const DIGIT_BASE_WIDTH = 5;
 const DIGIT_BASE_HEIGHT = 7;
 const COLON_BASE_WIDTH = 3;
+const MAX_MINUTE_DIGITS = 3;
+const CACHE_WARM_MINUTES = 180;
 
 const DIGIT_HEIGHT = DIGIT_BASE_HEIGHT * DIGIT_SCALE;
-const MM_WIDTH = (DIGIT_BASE_WIDTH + 1 + DIGIT_BASE_WIDTH + 1 + COLON_BASE_WIDTH) * DIGIT_SCALE;
-const SS_WIDTH = (DIGIT_BASE_WIDTH + 1 + DIGIT_BASE_WIDTH) * DIGIT_SCALE;
 const MINUTE_DIGIT_GAP = 1;
 const MINUTE_COLON_GAP = 1;
 const SECOND_DIGIT_GAP = 1;
+const MINUTE_GROUP_WIDTH =
+  (DIGIT_BASE_WIDTH * MAX_MINUTE_DIGITS + MINUTE_DIGIT_GAP * (MAX_MINUTE_DIGITS - 1) + MINUTE_COLON_GAP + COLON_BASE_WIDTH)
+  * DIGIT_SCALE;
+const SS_WIDTH = (DIGIT_BASE_WIDTH + 1 + DIGIT_BASE_WIDTH) * DIGIT_SCALE;
 
 const TIMER_GROUP_GAP = 10;
-const TOTAL_TIMER_WIDTH = MM_WIDTH + TIMER_GROUP_GAP + SS_WIDTH;
+const TOTAL_TIMER_WIDTH = MINUTE_GROUP_WIDTH + TIMER_GROUP_GAP + SS_WIDTH;
 
 const LARGE_TIMER_MARGIN_X = 24;
 const LARGE_TIMER_MARGIN_Y = 28;
 const COMPACT_TIMER_MARGIN_X = 24;
 const COMPACT_TIMER_MARGIN_Y = 32;
 const COMPACT_TIMER_WIDTH = 300;
+const COMPACT_TIMER_EDGE_MIN_WIDTH = 120;
+const COMPACT_TIMER_EDGE_CHAR_WIDTH = 22;
+const COMPACT_TIMER_EDGE_EXTRA_WIDTH = 20;
 const COMPACT_TIMER_HEIGHT = 112;
 const COMPACT_TIMER_CENTER_BIAS_X = 52;
 
 const DIGIT_PATTERNS: Record<string, PixelPattern> = {
+  ' ': [[0, 0, 0, 0, 0], [0, 0, 0, 0, 0], [0, 0, 0, 0, 0], [0, 0, 0, 0, 0], [0, 0, 0, 0, 0], [0, 0, 0, 0, 0], [0, 0, 0, 0, 0]],
   '0': [[1, 1, 1, 1, 1], [1, 0, 0, 0, 1], [1, 0, 0, 0, 1], [1, 0, 0, 0, 1], [1, 0, 0, 0, 1], [1, 0, 0, 0, 1], [1, 1, 1, 1, 1]],
   '1': [[0, 0, 1, 0, 0], [0, 1, 1, 0, 0], [0, 0, 1, 0, 0], [0, 0, 1, 0, 0], [0, 0, 1, 0, 0], [0, 0, 1, 0, 0], [0, 1, 1, 1, 0]],
   '2': [[1, 1, 1, 1, 1], [0, 0, 0, 0, 1], [0, 0, 0, 0, 1], [1, 1, 1, 1, 1], [1, 0, 0, 0, 0], [1, 0, 0, 0, 0], [1, 1, 1, 1, 1]],
@@ -153,19 +161,24 @@ export function formatTime(seconds: number): string {
 }
 
 function timeStringToSeconds(time: string): number {
-  if (!time || time.length < 5) return Number.MAX_SAFE_INTEGER;
-  const minutes = parseInt(time.slice(0, 2), 10);
-  const seconds = parseInt(time.slice(3, 5), 10);
+  if (!time.includes(':')) return Number.MAX_SAFE_INTEGER;
+  const [minuteText, secondText] = time.split(':');
+  const minutes = parseInt(minuteText, 10);
+  const seconds = parseInt(secondText, 10);
+  if (!Number.isFinite(minutes) || !Number.isFinite(seconds)) {
+    return Number.MAX_SAFE_INTEGER;
+  }
   return minutes * 60 + seconds;
 }
 
 function buildPresetRows(presetMinutes: number[], selectedPreset: number): string[] {
   const rows: string[] = [];
-  const visiblePresets = presetMinutes.slice(0, 8);
+  const visiblePresets = presetMinutes.slice(0, 6);
+  const columns = visiblePresets.some((preset) => preset >= 100) ? 3 : 4;
 
-  for (let index = 0; index < visiblePresets.length; index += 4) {
+  for (let index = 0; index < visiblePresets.length; index += columns) {
     const row = visiblePresets
-      .slice(index, index + 4)
+      .slice(index, index + columns)
       .map((preset) => (preset === selectedPreset ? `[${preset}]` : `${preset}`))
       .join('  ');
 
@@ -176,15 +189,12 @@ function buildPresetRows(presetMinutes: number[], selectedPreset: number): strin
 }
 
 function buildPresetContent(selectedPreset: number, presetMinutes: number[]): string {
-  const minutes = String(Math.min(99, Math.max(0, selectedPreset))).padStart(2, '0');
   const rows = buildPresetRows(presetMinutes, selectedPreset);
 
   return [
-    'G2 Timer',
-    '',
-    `Minutes: ${minutes}`,
+    'Timer',
+    `${selectedPreset} min ready`,
     ...(rows.length ? rows : ['No shortcuts']),
-    '',
     'Swipe: shortcuts',
     'Tap: start',
     '2Tap: menu',
@@ -198,19 +208,26 @@ function formatLayoutSummary(settings: TimerLayoutSettings): string {
   return `${size} / ${vertical} / ${horizontal}`;
 }
 
-function buildHomeContent(homeSelection: HomeSelection, selectedPreset: number, layoutSettings: TimerLayoutSettings): string {
-  const minutes = String(Math.min(99, Math.max(0, selectedPreset))).padStart(2, '0');
+function buildHomeContent(
+  homeSelection: HomeSelection,
+  selectedPreset: number,
+  layoutSettings: TimerLayoutSettings,
+  state: TimerState,
+  remainingSeconds: number,
+): string {
+  const timerLabel = state === TimerState.RUNNING
+    ? formatTime(remainingSeconds)
+    : `${selectedPreset} min`;
+  const primaryHint = state === TimerState.RUNNING ? 'Tap: next screen' : 'Tap: open';
+  const secondaryHint = state === TimerState.RUNNING ? '2Tap: timer' : 'Swipe: choose';
 
   return [
     'G2 Timer',
-    '',
-    `${homeSelection === 'timer' ? '>' : ' '} Timer`,
-    `  ${minutes} min ready`,
-    `${homeSelection === 'settings' ? '>' : ' '} Layout settings`,
+    `${homeSelection === 'timer' ? '>' : ' '} Timer  ${timerLabel}`,
+    `${homeSelection === 'settings' ? '>' : ' '} Layout`,
     `  ${formatLayoutSummary(layoutSettings)}`,
-    '',
-    'Swipe: choose',
-    'Tap: open',
+    primaryHint,
+    secondaryHint,
   ].join('\n');
 }
 
@@ -238,17 +255,14 @@ function buildSettingsContent(
   const stateLabel = state === TimerState.IDLE ? 'IDLE' : state;
 
   return [
-    'Layout Settings',
-    '',
-    `${settingsField === 'format' ? '>' : ' '} Size: ${formatTimerLayoutValue('format', layoutSettings)}`,
-    `${settingsField === 'vertical' ? '>' : ' '} Vertical: ${formatTimerLayoutValue('vertical', layoutSettings)}`,
-    `${settingsField === 'horizontal' ? '>' : ' '} Horizontal: ${formatTimerLayoutValue('horizontal', layoutSettings)}`,
-    `Preview: ${preview}`,
-    `State: ${stateLabel}`,
-    '',
+    'Layout',
+    `${settingsField === 'format' ? '>' : ' '} Size ${formatTimerLayoutValue('format', layoutSettings)}`,
+    `${settingsField === 'vertical' ? '>' : ' '} Vert ${formatTimerLayoutValue('vertical', layoutSettings)}`,
+    `${settingsField === 'horizontal' ? '>' : ' '} Horz ${formatTimerLayoutValue('horizontal', layoutSettings)}`,
+    `Preview ${preview} ${stateLabel}`,
     'Tap: next field',
     'Swipe: change',
-    '2Tap: menu',
+    `2Tap: ${state === TimerState.RUNNING ? 'timer' : 'menu'}`,
   ].join('\n');
 }
 
@@ -300,18 +314,26 @@ async function cachedPng(
   return bytes;
 }
 
-function getMmBytes(minuteTens: string, minuteOnes: string): Promise<number[]> {
-  return cachedPng(`mm:${minuteTens}${minuteOnes}`, MM_WIDTH, DIGIT_HEIGHT, (c) => {
-    const minuteTensPattern = DIGIT_PATTERNS[minuteTens];
-    const minuteOnesPattern = DIGIT_PATTERNS[minuteOnes];
-    if (!minuteTensPattern || !minuteOnesPattern) return;
+function normalizeMinuteGroup(minutes: string): string {
+  return minutes.slice(-MAX_MINUTE_DIGITS).padStart(MAX_MINUTE_DIGITS, ' ');
+}
 
-    drawPattern(c, minuteTensPattern, 0, 0, DIGIT_SCALE);
-    drawPattern(c, minuteOnesPattern, (DIGIT_BASE_WIDTH + MINUTE_DIGIT_GAP) * DIGIT_SCALE, 0, DIGIT_SCALE);
+function getMinuteGroupBytes(minutes: string): Promise<number[]> {
+  const normalizedMinutes = normalizeMinuteGroup(minutes);
+  const minuteDigits = normalizedMinutes.split('');
+  const digitStep = (DIGIT_BASE_WIDTH + MINUTE_DIGIT_GAP) * DIGIT_SCALE;
+
+  return cachedPng(`mm:${normalizedMinutes}`, MINUTE_GROUP_WIDTH, DIGIT_HEIGHT, (c) => {
+    minuteDigits.forEach((digit, index) => {
+      const pattern = DIGIT_PATTERNS[digit];
+      if (!pattern) return;
+      drawPattern(c, pattern, index * digitStep, 0, DIGIT_SCALE);
+    });
+
     drawPattern(
       c,
       COLON_PATTERN,
-      (DIGIT_BASE_WIDTH + MINUTE_DIGIT_GAP + DIGIT_BASE_WIDTH + MINUTE_COLON_GAP) * DIGIT_SCALE,
+      (DIGIT_BASE_WIDTH * MAX_MINUTE_DIGITS + MINUTE_DIGIT_GAP * (MAX_MINUTE_DIGITS - 1) + MINUTE_COLON_GAP) * DIGIT_SCALE,
       0,
       DIGIT_SCALE,
     );
@@ -331,11 +353,9 @@ function getSsBytes(seconds: string): Promise<number[]> {
 
 function prefetchSecond(seconds: number): void {
   const time = formatTime(seconds);
-  const minuteTens = time[0];
-  const minuteOnes = time[1];
-  const secondPair = time.slice(3, 5);
+  const [minuteGroup, secondPair = '00'] = time.split(':');
   debug(`prefetchSecond ${time}`);
-  void getMmBytes(minuteTens, minuteOnes);
+  void getMinuteGroupBytes(minuteGroup);
   void getSsBytes(secondPair);
 }
 
@@ -347,9 +367,8 @@ async function warmBaseCache(): Promise<void> {
 
   debug('warmBaseCache start');
   cacheWarmPromise = (async () => {
-    for (let minute = 0; minute <= 60; minute += 1) {
-      const mm = String(minute).padStart(2, '0');
-      await getMmBytes(mm[0], mm[1]);
+    for (let minute = 0; minute <= CACHE_WARM_MINUTES; minute += 1) {
+      await getMinuteGroupBytes(String(minute));
     }
     for (let second = 0; second < 60; second += 1) {
       const ss = String(second).padStart(2, '0');
@@ -376,8 +395,25 @@ function alignVertical(vertical: TimerLayoutSettings['vertical'], height: number
   return Math.floor((DISPLAY_HEIGHT - height) / 2);
 }
 
-function alignCompactHorizontal(horizontal: TimerLayoutSettings['horizontal']): number {
-  const base = alignHorizontal(horizontal, COMPACT_TIMER_WIDTH, COMPACT_TIMER_MARGIN_X);
+function estimateCompactTimerWidth(content: string): number {
+  const visibleContent = content.trim();
+  if (!visibleContent) {
+    return COMPACT_TIMER_EDGE_MIN_WIDTH;
+  }
+
+  return Math.max(
+    COMPACT_TIMER_EDGE_MIN_WIDTH,
+    visibleContent.length * COMPACT_TIMER_EDGE_CHAR_WIDTH + COMPACT_TIMER_EDGE_EXTRA_WIDTH,
+  );
+}
+
+function getCompactTimerWidth(horizontal: TimerLayoutSettings['horizontal'], content: string): number {
+  return horizontal === 'center' ? COMPACT_TIMER_WIDTH : estimateCompactTimerWidth(content);
+}
+
+function alignCompactHorizontal(horizontal: TimerLayoutSettings['horizontal'], content: string): number {
+  const compactWidth = getCompactTimerWidth(horizontal, content);
+  const base = alignHorizontal(horizontal, compactWidth, COMPACT_TIMER_MARGIN_X);
 
   if (horizontal !== 'center') {
     return base;
@@ -393,12 +429,14 @@ function buildDisplayContainer(
   content: string,
 ): TextContainerProperty {
   if (screen === 'timer-compact') {
+    const compactWidth = getCompactTimerWidth(layoutSettings.horizontal, content);
+
     return new TextContainerProperty({
       containerID: DISPLAY_CONTAINER_ID,
       containerName: DISPLAY_CONTAINER_NAME,
-      xPosition: alignCompactHorizontal(layoutSettings.horizontal),
+      xPosition: alignCompactHorizontal(layoutSettings.horizontal, content),
       yPosition: alignVertical(layoutSettings.vertical, COMPACT_TIMER_HEIGHT, COMPACT_TIMER_MARGIN_Y),
-      width: COMPACT_TIMER_WIDTH,
+      width: compactWidth,
       height: COMPACT_TIMER_HEIGHT,
       borderWidth: 0,
       borderColor: 0,
@@ -433,13 +471,13 @@ function buildLargeImageContainers(layoutSettings: TimerLayoutSettings): ImageCo
       containerName: MP_CONTAINER_NAME,
       xPosition: x,
       yPosition: y,
-      width: MM_WIDTH,
+      width: MINUTE_GROUP_WIDTH,
       height: DIGIT_HEIGHT,
     }),
     new ImageContainerProperty({
       containerID: MSS_CONTAINER_ID,
       containerName: MSS_CONTAINER_NAME,
-      xPosition: x + MM_WIDTH + TIMER_GROUP_GAP,
+      xPosition: x + MINUTE_GROUP_WIDTH + TIMER_GROUP_GAP,
       yPosition: y,
       width: SS_WIDTH,
       height: DIGIT_HEIGHT,
@@ -452,11 +490,9 @@ function desiredScreenMode(
   navigation: GlassesNavigationState,
   layoutSettings: TimerLayoutSettings,
 ): UiScreenMode {
-  if (state === TimerState.IDLE) {
-    if (navigation.panel === 'home') return 'home';
-    if (navigation.panel === 'settings') return 'settings';
-    return 'preset';
-  }
+  if (navigation.panel === 'home') return 'home';
+  if (navigation.panel === 'settings') return 'settings';
+  if (state === TimerState.IDLE) return 'preset';
   return layoutSettings.format === 'large' ? 'timer-large' : 'timer-compact';
 }
 
@@ -471,7 +507,7 @@ function buildInitialDisplayContent(
   layoutSettings: TimerLayoutSettings,
 ): string {
   if (screen === 'home') {
-    return buildHomeContent(navigation.homeSelection, selectedPreset, layoutSettings);
+    return buildHomeContent(navigation.homeSelection, selectedPreset, layoutSettings, state, remainingSeconds);
   }
 
   if (screen === 'preset') {
@@ -608,14 +644,10 @@ async function applyTimerImages(bridge: any, seconds: number, forceAll: boolean)
   }
 
   const time = formatTime(seconds);
-  const minuteTens = time[0];
-  const minuteOnes = time[1];
-  const secondPair = time.slice(3, 5);
-  const prevMinuteTens = lastDisplayedTime[0];
-  const prevMinuteOnes = lastDisplayedTime[1];
-  const prevSecondPair = lastDisplayedTime.slice(3, 5);
+  const [minuteGroup, secondPair = '00'] = time.split(':');
+  const [prevMinuteGroup = '', prevSecondPair = ''] = lastDisplayedTime.split(':');
 
-  const needMm = forceAll || !areTimerImagesVisible || minuteTens !== prevMinuteTens || minuteOnes !== prevMinuteOnes;
+  const needMm = forceAll || !areTimerImagesVisible || minuteGroup !== prevMinuteGroup;
   const needSs = forceAll || !areTimerImagesVisible || secondPair !== prevSecondPair;
   if (!needMm && !needSs && !forceAll) {
     debug(`applyTimerImages skip no-diff time=${time}`);
@@ -634,7 +666,7 @@ async function applyTimerImages(bridge: any, seconds: number, forceAll: boolean)
   }
 
   if (needMm) {
-    const mmData = await getMmBytes(minuteTens, minuteOnes);
+    const mmData = await getMinuteGroupBytes(minuteGroup);
     if (!isLargeTimerSessionActive(sessionId)) {
       debug(`applyTimerImages stale before MM push session=${sessionId}`);
       return;
@@ -741,21 +773,21 @@ export async function renderUI(
       return;
     }
 
-      const screen = desiredScreenMode(state, navigation, layoutSettings);
-      const displayContent = buildInitialDisplayContent(
-        screen,
-        state,
-        selectedPreset,
-        presetMinutes,
-        remainingSeconds,
-        blinkVisible,
-        navigation,
-        layoutSettings,
-      );
+    const screen = desiredScreenMode(state, navigation, layoutSettings);
+    const displayContent = buildInitialDisplayContent(
+      screen,
+      state,
+      selectedPreset,
+      presetMinutes,
+      remainingSeconds,
+      blinkVisible,
+      navigation,
+      layoutSettings,
+    );
     const switchedScreen = currentScreenMode !== screen;
-    const sessionId = switchedScreen ? startRenderSession(screen) : renderSessionId;
     const ok = await ensurePageLayout(bridge, screen, layoutSettings, displayContent);
     if (!ok) return;
+    const sessionId = switchedScreen ? startRenderSession(screen) : renderSessionId;
 
     pushText(bridge, displayContent, switchedScreen);
 
@@ -777,6 +809,7 @@ export async function createPageContainers(
   bridge: any,
   state: TimerState,
   selectedPreset = 5,
+  remainingSeconds = selectedPreset * 60,
   layoutSettings: TimerLayoutSettings = DEFAULT_TIMER_LAYOUT_SETTINGS,
   presetMinutes: number[] = [],
   navigation: GlassesNavigationState = {
@@ -796,7 +829,7 @@ export async function createPageContainers(
     state,
     selectedPreset,
     presetMinutes,
-    selectedPreset * 60,
+    remainingSeconds,
     true,
     navigation,
     layoutSettings,

@@ -1,9 +1,10 @@
-import { OsEventTypeList, waitForEvenAppBridge } from '@evenrealities/even_hub_sdk';
+import { EventSourceType, OsEventTypeList, waitForEvenAppBridge } from '@evenrealities/even_hub_sdk';
 import { TimerStateManager } from './timerState';
 import {
   createPageContainers,
   renderUI,
   formatTime,
+  resetPreviousTexts,
   setUiDebugLogger,
   type GlassesNavigationState,
   type GlassesPanel,
@@ -48,6 +49,7 @@ let homeSelection: HomeSelection = 'timer';
 let settingsField: TimerLayoutField = 'format';
 
 type RenderReason = 'tick' | 'state' | 'foreground' | 'manual';
+type InteractionSource = 'ring' | 'glasses' | 'unknown';
 
 const TELEMETRY_WINDOW_SIZE = 120;
 const TELEMETRY_FAST_BUCKET_RATIO = 0.25;
@@ -67,7 +69,9 @@ let displayTickIntervalId: ReturnType<typeof setInterval> | null = null;
 let lastDisplayTickSecondSent: number | null = null;
 let lastRenderedPresetButtonsSignature = '';
 let lastRawInteractionEventType: number | null = null;
+let lastRawInteractionEventSource: number | null = null;
 let lastRawInteractionEventAt = 0;
+let lastKnownTimerState: TimerState | null = null;
 
 const RAW_EVENT_FALLBACK_WINDOW_MS = 500;
 
@@ -152,6 +156,26 @@ function normalizeRawEventType(value: unknown): number | null {
   return null;
 }
 
+function normalizeRawEventSource(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    const numericValue = Number(value);
+    if (Number.isFinite(numericValue)) {
+      return numericValue;
+    }
+
+    const enumValue = (EventSourceType as Record<string, unknown>)[value];
+    if (typeof enumValue === 'number') {
+      return enumValue;
+    }
+  }
+
+  return null;
+}
+
 function extractRawEventType(input: unknown): number | null {
   if (!input || typeof input !== 'object') {
     return null;
@@ -181,15 +205,46 @@ function extractRawEventType(input: unknown): number | null {
   return null;
 }
 
+function extractRawEventSource(input: unknown): number | null {
+  if (!input || typeof input !== 'object') {
+    return null;
+  }
+
+  const candidate = input as Record<string, unknown>;
+  const directKeys = ['eventSource', 'EventSource', 'event_source', 'Event_Source'];
+
+  for (const key of directKeys) {
+    const normalized = normalizeRawEventSource(candidate[key]);
+    if (normalized !== null) {
+      return normalized;
+    }
+  }
+
+  const nestedKeys = ['jsonData', 'data', 'payload', 'textEvent', 'listEvent', 'sysEvent'];
+  for (const key of nestedKeys) {
+    const nested = candidate[key];
+    if (nested && typeof nested === 'object') {
+      const normalized = extractRawEventSource(nested);
+      if (normalized !== null) {
+        return normalized;
+      }
+    }
+  }
+
+  return null;
+}
+
 function rememberRawInteractionEvent(rawEvent: unknown): void {
   const eventType = extractRawEventType(rawEvent);
-  if (eventType === null) {
+  const eventSource = extractRawEventSource(rawEvent);
+  if (eventType === null && eventSource === null) {
     return;
   }
 
   lastRawInteractionEventType = eventType;
+  lastRawInteractionEventSource = eventSource;
   lastRawInteractionEventAt = Date.now();
-  pushDetailedLog('[RAW]', `eventType=${eventType}`);
+  pushDetailedLog('[RAW]', `eventType=${String(eventType)} eventSource=${String(eventSource)}`);
 }
 
 function getRecentRawInteractionEventType(): number | null {
@@ -202,7 +257,16 @@ function getRecentRawInteractionEventType(): number | null {
 
 function clearRecentRawInteractionEventType(): void {
   lastRawInteractionEventType = null;
+  lastRawInteractionEventSource = null;
   lastRawInteractionEventAt = 0;
+}
+
+function getRecentRawInteractionEventSource(): number | null {
+  if (Date.now() - lastRawInteractionEventAt > RAW_EVENT_FALLBACK_WINDOW_MS) {
+    return null;
+  }
+
+  return lastRawInteractionEventSource;
 }
 
 function activeLayoutSettings(): TimerLayoutSettings {
@@ -213,20 +277,21 @@ function activePresetMinutes(): number[] {
   return committedPresetSettings.customPresets;
 }
 
+function isTimerRunning(): boolean {
+  return Boolean(timerState) && timerState.getState() === TimerState.RUNNING;
+}
+
 function isIdleOnGlasses(): boolean {
   return Boolean(timerState) && timerState.getState() === TimerState.IDLE;
 }
 
 function effectivePanel(): GlassesPanel {
-  if (!timerState) {
-    return glassesPanel;
-  }
-  return timerState.getState() === TimerState.IDLE ? glassesPanel : 'timer';
+  return glassesPanel;
 }
 
 function currentNavigationState(): GlassesNavigationState {
   return {
-    panel: effectivePanel(),
+    panel: glassesPanel,
     homeSelection,
     settingsField,
   };
@@ -236,9 +301,9 @@ async function persistLayoutSettings(settings: TimerLayoutSettings): Promise<voi
   await saveTimerLayoutSettings(settings, bridge);
 }
 
-function openHomePanel(nextSelection: HomeSelection = homeSelection): void {
-  if (!isIdleOnGlasses()) {
-    pushDetailedLog('[NAV]', 'home panel ignored: timer not idle');
+function openHomePanel(nextSelection: HomeSelection = homeSelection, allowWhileRunning = false): void {
+  if (isTimerRunning() && !allowWhileRunning) {
+    pushDetailedLog('[NAV]', 'home panel ignored: timer running');
     return;
   }
 
@@ -249,9 +314,9 @@ function openHomePanel(nextSelection: HomeSelection = homeSelection): void {
   sendToGlassesImmediate('manual');
 }
 
-function openTimerPanel(): void {
-  if (!isIdleOnGlasses()) {
-    pushDetailedLog('[NAV]', 'timer panel ignored: timer not idle');
+function openTimerPanel(allowWhileRunning = false): void {
+  if (isTimerRunning() && !allowWhileRunning) {
+    pushDetailedLog('[NAV]', 'timer panel ignored: timer running');
     return;
   }
 
@@ -262,9 +327,9 @@ function openTimerPanel(): void {
   sendToGlassesImmediate('manual');
 }
 
-function openSettingsPanel(): void {
-  if (!isIdleOnGlasses()) {
-    pushDetailedLog('[NAV]', 'settings panel ignored: timer not idle');
+function openSettingsPanel(allowWhileRunning = false): void {
+  if (isTimerRunning() && !allowWhileRunning) {
+    pushDetailedLog('[NAV]', 'settings panel ignored: timer running');
     return;
   }
 
@@ -274,6 +339,42 @@ function openSettingsPanel(): void {
   pushDetailedLog('[NAV]', 'panel=settings');
   updateRemoteView();
   sendToGlassesImmediate('manual');
+}
+
+function resolveInteractionSource(event: any, hasStructuredEvent: boolean): InteractionSource {
+  const sourceValue = normalizeRawEventSource(event?.sysEvent?.eventSource) ?? getRecentRawInteractionEventSource();
+  if (sourceValue === EventSourceType.TOUCH_EVENT_FROM_RING) {
+    return 'ring';
+  }
+  if (
+    sourceValue === EventSourceType.TOUCH_EVENT_FROM_GLASSES_L ||
+    sourceValue === EventSourceType.TOUCH_EVENT_FROM_GLASSES_R
+  ) {
+    return 'glasses';
+  }
+  if (!hasStructuredEvent) {
+    return 'glasses';
+  }
+  if (event?.listEvent || event?.textEvent) {
+    return 'ring';
+  }
+  return 'unknown';
+}
+
+function cycleRunningPanels(): void {
+  if (!timerState || timerState.getState() !== TimerState.RUNNING) return;
+
+  if (glassesPanel === 'timer') {
+    openHomePanel('timer', true);
+    return;
+  }
+
+  if (glassesPanel === 'home') {
+    openSettingsPanel(true);
+    return;
+  }
+
+  openTimerPanel(true);
 }
 
 function persistCurrentLayoutSettings(): void {
@@ -320,7 +421,7 @@ function stopDisplayTicker(): void {
 function startDisplayTicker(): void {
   if (displayTickIntervalId !== null) return;
   displayTickIntervalId = setInterval(() => {
-    if (!bridge || !timerState || !isInForeground || !isPageVisible) return;
+    if (!bridge || !timerState) return;
     if (timerState.getState() !== TimerState.RUNNING) return;
 
     const displaySecond = timerState.getDisplayRemainingSeconds(estimatedFixedTickDelayMs);
@@ -408,19 +509,66 @@ function getDisplaySummary(): string {
   }
 
   const state = timerState.getState();
-  if (state !== TimerState.IDLE) {
-    return `Timer ${state.toLowerCase()} · ${formatTime(timerState.getRemainingSeconds())}`;
-  }
-
   if (glassesPanel === 'settings') {
-    return `Layout settings · ${formatTimerLayoutLabel()}`;
+    const prefix = state === TimerState.RUNNING
+      ? `Layout settings - ${formatTime(timerState.getRemainingSeconds())}`
+      : 'Layout settings';
+    return `${prefix} - ${formatTimerLayoutLabel()}`;
   }
 
   if (glassesPanel === 'timer') {
+    if (state === TimerState.RUNNING) {
+      return `Timer running - ${formatTime(timerState.getRemainingSeconds())}`;
+    }
+    if (state === TimerState.PAUSED) {
+      return `Timer paused - ${formatTime(timerState.getRemainingSeconds())}`;
+    }
+    if (state === TimerState.DONE) {
+      return 'Timer done - 00:00';
+    }
+    return `Timer setup - ${timerState.getSelectedPreset()} min`;
+  }
+
+  if (state === TimerState.RUNNING) {
+    return `Home menu - timer running ${formatTime(timerState.getRemainingSeconds())}`;
+  }
+  if (state === TimerState.PAUSED) {
+    return `Home menu - timer paused ${formatTime(timerState.getRemainingSeconds())}`;
+  }
+  if (false && glassesPanel === 'settings') {
+    return `Timer ${state.toLowerCase()} · ${formatTime(timerState.getRemainingSeconds())}`;
+  }
+
+  if (false && glassesPanel === 'settings') {
+    return `Layout settings · ${formatTimerLayoutLabel()}`;
+  }
+
+  if (false && glassesPanel === 'timer') {
     return `Timer setup · ${timerState.getSelectedPreset()} min`;
   }
 
   return `Home menu · ${homeSelection === 'timer' ? 'Timer' : 'Layout settings'}`;
+}
+
+function getRemoteGestureHelp(): string {
+  if (!timerState) {
+    return 'Glasses controls load after connection.';
+  }
+
+  const state = timerState.getState();
+  if (state === TimerState.RUNNING || state === TimerState.PAUSED) {
+    return 'On glasses: tap switches timer, menu, and settings. Double tap on Timer pauses or resumes. Ring taps stay locked while the timer is active.';
+  }
+
+  if (glassesPanel === 'settings') {
+    return 'On glasses: tap moves to the next setting field, swipe changes the selected setting, double tap returns to the menu.';
+  }
+
+  if (glassesPanel === 'timer') {
+    return 'On glasses: swipe changes shortcuts, tap starts the timer, double tap returns to the menu.';
+  }
+
+  return 'On glasses: swipe chooses Timer or Settings, tap opens the selected screen.';
 }
 
 function ensurePresetButtonsRendered(): void {
@@ -452,6 +600,7 @@ function updateRemoteView() {
   const customPresetsInput = document.getElementById('custom-presets-input') as HTMLInputElement | null;
   const applyMinuteBtn = document.getElementById('apply-minute-btn') as HTMLButtonElement | null;
   const saveCustomPresetsBtn = document.getElementById('save-custom-presets') as HTMLButtonElement | null;
+  const remoteGestureHelp = document.getElementById('remote-gesture-help');
 
   const connected = !!(bridge && timerState);
   if (status) {
@@ -462,6 +611,9 @@ function updateRemoteView() {
   }
   if (displaySummary) {
     displaySummary.textContent = getDisplaySummary();
+  }
+  if (remoteGestureHelp) {
+    remoteGestureHelp.textContent = getRemoteGestureHelp();
   }
 
   if (customPresetsInput && document.activeElement !== customPresetsInput) {
@@ -498,7 +650,7 @@ function updateRemoteView() {
     screenBtns.forEach((button) => {
       const target = (button as HTMLElement).dataset.screen || '';
       const isCurrent = target === currentPanel;
-      const isLocked = state !== TimerState.IDLE && target !== 'timer';
+      const isLocked = state === TimerState.RUNNING && target !== 'timer';
       button.classList.toggle('selected', isCurrent);
       (button as HTMLButtonElement).disabled = !connected || isLocked;
     });
@@ -539,7 +691,7 @@ function updateRemoteView() {
 // ── Fire-and-forget glasses render (never awaited, never blocks) ──
 // Send every tick so display updates every 1s; overlapping pushes allowed.
 function sendToGlasses(reason: RenderReason = 'tick') {
-  if (!isInForeground || !isPageVisible || !bridge || !timerState) {
+  if (!bridge || !timerState) {
     pushDetailedLog(
       '[RENDER]',
       `skip reason=${reason} foreground=${isInForeground} pageVisible=${isPageVisible} bridge=${Boolean(bridge)} stateMgr=${Boolean(timerState)}`,
@@ -579,7 +731,7 @@ function sendToGlasses(reason: RenderReason = 'tick') {
 }
 
 function sendToGlassesImmediate(reason: RenderReason = 'manual') {
-  if (!isPageVisible || !bridge || !timerState) {
+  if (!bridge || !timerState) {
     pushDetailedLog(
       '[RENDER]',
       `skip-immediate reason=${reason} pageVisible=${isPageVisible} bridge=${Boolean(bridge)} stateMgr=${Boolean(timerState)}`,
@@ -651,11 +803,15 @@ function setupRemoteControl() {
     }
     if (state === TimerState.PAUSED) {
       clearRemoteStartPending();
+      glassesPanel = 'timer';
+      homeSelection = 'timer';
       timerState.toggleStartPause();
       return;
     }
     if (state === TimerState.IDLE || state === TimerState.DONE) {
       if (remoteStartScheduledAt !== null) return;
+      glassesPanel = 'timer';
+      homeSelection = 'timer';
       timerState.start();
       remoteStartScheduledAt = Date.now();
       remoteStartCountdownIntervalId = setInterval(() => updateRemoteView(), REMOTE_START_COUNTDOWN_INTERVAL_MS);
@@ -763,7 +919,6 @@ function syncPageVisibility(nextVisible: boolean): void {
   if (!isPageVisible) {
     persistCurrentTimerState();
     timerState.handleBackground();
-    stopDisplayTicker();
     return;
   }
 
@@ -772,7 +927,7 @@ function syncPageVisibility(nextVisible: boolean): void {
   updateRemoteView();
   persistCurrentTimerState();
 
-  if (bridge && isInForeground) {
+  if (bridge) {
     sendToGlassesImmediate('foreground');
   }
 }
@@ -849,9 +1004,10 @@ function setupEventHandlers() {
       const interactionEventType = textEventType ?? listEventType;
       const effectiveInteractionEventType = interactionEventType ?? getRecentRawInteractionEventType();
       const hasStructuredEvent = Boolean(event?.listEvent || event?.textEvent || event?.sysEvent || event?.audioEvent);
+      const interactionSource = resolveInteractionSource(event, hasStructuredEvent);
       pushDetailedLog(
         '[EVENT]',
-        `recv list=${String(listEventType)}:${String(event?.listEvent?.containerName)} text=${String(textEventType)}:${String(event?.textEvent?.containerName)} sys=${String(sysEventType)} raw=${String(getRecentRawInteractionEventType())}`,
+        `recv list=${String(listEventType)}:${String(event?.listEvent?.containerName)} text=${String(textEventType)}:${String(event?.textEvent?.containerName)} sys=${String(sysEventType)} source=${interactionSource} raw=${String(getRecentRawInteractionEventType())}`,
       );
       console.log('Even Hub event:', event);
 
@@ -862,22 +1018,17 @@ function setupEventHandlers() {
         syncDisplayTickerWithState(timerState.getState());
         updateRemoteView();
         persistCurrentTimerState();
-        if (isPageVisible) {
-          sendToGlassesImmediate('foreground');
-        }
+        sendToGlassesImmediate('foreground');
         return;
       }
       if (sysEventType === OsEventTypeList.FOREGROUND_EXIT_EVENT) {
         pushDetailedLog('[EVENT]', 'exitForeground');
         isInForeground = false;
         timerState.handleBackground();
-        stopDisplayTicker();
         persistCurrentTimerState();
         updateRemoteView();
         return;
       }
-
-      if (!isInForeground) return;
 
       if (effectiveInteractionEventType === null && !sysEventType) {
         // Either a bare event (no structured payload) or a structured event whose
@@ -885,30 +1036,30 @@ function setupEventHandlers() {
         // temple button, which is the only physical gesture that can produce such an
         // event on the G2.
         pushDetailedLog('[EVENT]', hasStructuredEvent ? 'structured event with unknown eventType -> singleTap' : 'bare event -> singleTap');
-        handleSingleTap();
+        handleSingleTap(interactionSource);
         return;
       }
 
       if (effectiveInteractionEventType === OsEventTypeList.SCROLL_TOP_EVENT || sysEventType === OsEventTypeList.SCROLL_TOP_EVENT) {
         clearRecentRawInteractionEventType();
-        handleSwipe(1);
+        handleSwipe(1, interactionSource);
         return;
       }
       if (effectiveInteractionEventType === OsEventTypeList.SCROLL_BOTTOM_EVENT || sysEventType === OsEventTypeList.SCROLL_BOTTOM_EVENT) {
         clearRecentRawInteractionEventType();
-        handleSwipe(-1);
+        handleSwipe(-1, interactionSource);
         return;
       }
       if (effectiveInteractionEventType === OsEventTypeList.DOUBLE_CLICK_EVENT || sysEventType === OsEventTypeList.DOUBLE_CLICK_EVENT) {
         clearRecentRawInteractionEventType();
-        pushDetailedLog('[EVENT]', 'doubleTap');
-        handleDoubleTap();
+        pushDetailedLog('[EVENT]', `doubleTap source=${interactionSource}`);
+        handleDoubleTap(interactionSource);
         return;
       }
       if (effectiveInteractionEventType === OsEventTypeList.CLICK_EVENT || sysEventType === OsEventTypeList.CLICK_EVENT) {
         clearRecentRawInteractionEventType();
-        pushDetailedLog('[EVENT]', 'singleTap');
-        handleSingleTap();
+        pushDetailedLog('[EVENT]', `singleTap source=${interactionSource}`);
+        handleSingleTap(interactionSource);
       }
     });
   } catch (err) {
@@ -917,10 +1068,29 @@ function setupEventHandlers() {
   }
 }
 
-function handleSingleTap() {
+function handleSingleTap(source: InteractionSource) {
   if (!timerState || !bridge) return;
+  const state = timerState.getState();
   const panel = effectivePanel();
-  pushDetailedLog('[INPUT]', `singleTap panel=${panel} state=${timerState.getState()}`);
+  pushDetailedLog('[INPUT]', `singleTap panel=${panel} state=${state} source=${source}`);
+
+  if (state === TimerState.RUNNING || state === TimerState.PAUSED) {
+    if (source !== 'glasses') {
+      pushDetailedLog('[INPUT]', `singleTap ignored while active source=${source}`);
+      return;
+    }
+
+    if (panel === 'settings') {
+      settingsField = nextTimerLayoutField(settingsField);
+      pushDetailedLog('[LAYOUT]', `field=${settingsField}`);
+      updateRemoteView();
+      sendToGlassesImmediate('manual');
+      return;
+    }
+
+    cycleRunningPanels();
+    return;
+  }
 
   if (panel === 'home') {
     if (homeSelection === 'settings') {
@@ -942,10 +1112,27 @@ function handleSingleTap() {
   timerState.toggleStartPause();
 }
 
-function handleDoubleTap(): void {
+function handleDoubleTap(source: InteractionSource): void {
   if (!timerState || !bridge) return;
+  const state = timerState.getState();
   const panel = effectivePanel();
-  pushDetailedLog('[INPUT]', `doubleTap panel=${panel} state=${timerState.getState()}`);
+  pushDetailedLog('[INPUT]', `doubleTap panel=${panel} state=${state} source=${source}`);
+
+  if (state === TimerState.RUNNING || state === TimerState.PAUSED) {
+    if (source !== 'glasses') {
+      pushDetailedLog('[INPUT]', `doubleTap ignored while active source=${source}`);
+      return;
+    }
+
+    if (panel === 'timer') {
+      clearRemoteStartPending();
+      timerState.toggleStartPause();
+      return;
+    }
+
+    openTimerPanel(true);
+    return;
+  }
 
   if (panel === 'settings') {
     openHomePanel('settings');
@@ -965,8 +1152,9 @@ function handleDoubleTap(): void {
   timerState.resetToPreset();
 }
 
-function handleSwipe(dir: 1 | -1) {
+function handleSwipe(dir: 1 | -1, source: InteractionSource) {
   if (!timerState || !bridge) return;
+  const state = timerState.getState();
   const now = Date.now();
   const elapsed = now - lastSwipeTime;
   if (elapsed < SWIPE_COOLDOWN_MS) {
@@ -975,7 +1163,14 @@ function handleSwipe(dir: 1 | -1) {
   }
   lastSwipeTime = now;
   const panel = effectivePanel();
-  pushDetailedLog('[INPUT]', `swipe dir=${dir} accepted panel=${panel}`);
+  pushDetailedLog('[INPUT]', `swipe dir=${dir} accepted panel=${panel} state=${state} source=${source}`);
+
+  if (state === TimerState.RUNNING || state === TimerState.PAUSED) {
+    if (source !== 'glasses' || panel !== 'settings') {
+      pushDetailedLog('[INPUT]', `swipe ignored while active panel=${panel} source=${source}`);
+      return;
+    }
+  }
 
   if (panel === 'home') {
     homeSelection = homeSelection === 'timer' ? 'settings' : 'timer';
@@ -1026,6 +1221,11 @@ function attachTimerStateCallbacks(): void {
 
   timerState.setOnStateChange(() => {
     const state = timerState?.getState();
+    if (state === TimerState.RUNNING && lastKnownTimerState !== TimerState.RUNNING) {
+      glassesPanel = 'timer';
+      homeSelection = 'timer';
+    }
+    lastKnownTimerState = state ?? null;
     pushDetailedLog('[CALLBACK]', `onStateChange state=${state} t=${timerState ? formatTime(timerState.getRemainingSeconds()) : '--:--'}`);
     updateRemoteView();
     persistCurrentTimerState();
@@ -1040,6 +1240,7 @@ async function init() {
   try {
     pushDetailedLog('[APP]', 'init start');
     setUiDebugLogger((line) => pushDetailedLog('', line));
+    resetPreviousTexts();
     attachPageLifecycleHandlers();
     attachRawEvenHubEventFallback();
     updateRemoteView();
@@ -1059,11 +1260,13 @@ async function init() {
       timerState = new TimerStateManager();
       timerState.setOnDebugLog((line) => pushDetailedLog('', line));
       attachTimerStateCallbacks();
+      lastKnownTimerState = timerState.getState();
       const restoredLocalTimerSnapshot = await loadTimerRuntimeSnapshot(null);
       if (restoredLocalTimerSnapshot) {
         timerState.restoreFromSnapshot(restoredLocalTimerSnapshot);
-        glassesPanel = 'home';
+        glassesPanel = timerState.getState() === TimerState.RUNNING ? 'timer' : 'home';
         homeSelection = 'timer';
+        lastKnownTimerState = timerState.getState();
         pushDetailedLog(
           '[STATE]',
           `restored local state=${timerState.getState()} preset=${timerState.getSelectedPreset()} remaining=${timerState.getRemainingSeconds()}s`,
@@ -1086,12 +1289,14 @@ async function init() {
     timerState = new TimerStateManager();
     timerState.setOnDebugLog((line) => pushDetailedLog('', line));
     attachTimerStateCallbacks();
+    lastKnownTimerState = timerState.getState();
 
     const restoredTimerSnapshot = await loadTimerRuntimeSnapshot(bridge);
     if (restoredTimerSnapshot) {
       timerState.restoreFromSnapshot(restoredTimerSnapshot);
-      glassesPanel = 'home';
+      glassesPanel = timerState.getState() === TimerState.RUNNING ? 'timer' : 'home';
       homeSelection = 'timer';
+      lastKnownTimerState = timerState.getState();
       pushDetailedLog(
         '[STATE]',
         `restored state=${timerState.getState()} preset=${timerState.getSelectedPreset()} remaining=${timerState.getRemainingSeconds()}s`,
@@ -1107,6 +1312,7 @@ async function init() {
       bridge,
       timerState.getState(),
       timerState.getSelectedPreset(),
+      timerState.getRemainingSeconds(),
       committedLayoutSettings,
       activePresetMinutes(),
       currentNavigationState(),

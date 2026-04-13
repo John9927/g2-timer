@@ -353,6 +353,8 @@ export class TimerStateManager {
 
   handleBackground(): void {
     this.debug(`handleBackground state=${this.data.state}`);
-    this.stopInterval();
+    if (this.data.state === TimerState.RUNNING && this.data.intervalId === null) {
+      this.startInterval();
+    }
   }
 }
