@@ -568,7 +568,7 @@ function getRemoteGestureHelp(): string {
     return 'On glasses: swipe changes shortcuts, tap starts the timer, double tap returns to the menu.';
   }
 
-  return 'On glasses: swipe chooses Timer or Settings, tap opens the selected screen.';
+  return 'On glasses: swipe chooses Timer or Settings, tap opens the selected screen, double tap exits.';
 }
 
 function ensurePresetButtonsRendered(): void {
@@ -1140,6 +1140,13 @@ function handleDoubleTap(source: InteractionSource): void {
   }
 
   if (panel === 'home') {
+    if (source !== 'glasses') {
+      pushDetailedLog('[INPUT]', `doubleTap ignored on home source=${source}`);
+      return;
+    }
+
+    pushDetailedLog('[APP]', 'request exit confirmation');
+    bridge.shutDownPageContainer(1);
     return;
   }
 
