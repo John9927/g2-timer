@@ -47,6 +47,7 @@ let committedPresetSettings: TimerPresetSettings = DEFAULT_TIMER_PRESET_SETTINGS
 let glassesPanel: GlassesPanel = 'home';
 let homeSelection: HomeSelection = 'timer';
 let settingsField: TimerLayoutField = 'format';
+let runningActionPromptVisible = false;
 
 type RenderReason = 'tick' | 'state' | 'foreground' | 'manual';
 type InteractionSource = 'ring' | 'glasses' | 'unknown';
@@ -294,7 +295,19 @@ function currentNavigationState(): GlassesNavigationState {
     panel: glassesPanel,
     homeSelection,
     settingsField,
+    runningActionPromptVisible,
   };
+}
+
+function clearRunningActionPrompt(): void {
+  runningActionPromptVisible = false;
+}
+
+function showRunningActionPrompt(): void {
+  runningActionPromptVisible = true;
+  pushDetailedLog('[NAV]', 'running action prompt shown');
+  updateRemoteView();
+  sendToGlassesImmediate('manual');
 }
 
 async function persistLayoutSettings(settings: TimerLayoutSettings): Promise<void> {
@@ -307,6 +320,7 @@ function openHomePanel(nextSelection: HomeSelection = homeSelection, allowWhileR
     return;
   }
 
+  clearRunningActionPrompt();
   homeSelection = nextSelection;
   glassesPanel = 'home';
   pushDetailedLog('[NAV]', `panel=home selection=${homeSelection}`);
@@ -320,6 +334,7 @@ function openTimerPanel(allowWhileRunning = false): void {
     return;
   }
 
+  clearRunningActionPrompt();
   homeSelection = 'timer';
   glassesPanel = 'timer';
   pushDetailedLog('[NAV]', 'panel=timer');
@@ -333,6 +348,7 @@ function openSettingsPanel(allowWhileRunning = false): void {
     return;
   }
 
+  clearRunningActionPrompt();
   homeSelection = 'settings';
   glassesPanel = 'settings';
   settingsField = 'format';
@@ -556,8 +572,16 @@ function getRemoteGestureHelp(): string {
   }
 
   const state = timerState.getState();
-  if (state === TimerState.RUNNING || state === TimerState.PAUSED) {
-    return 'On glasses: tap switches timer, menu, and settings. Double tap on Timer pauses or resumes. Ring taps stay locked while the timer is active.';
+  if (state === TimerState.RUNNING) {
+    return runningActionPromptVisible
+      ? 'On glasses: tap pauses the timer, double tap stops it.'
+      : 'On glasses: tap opens pause or stop actions. Double tap on Timer pauses or resumes. Ring taps stay locked while the timer is active.';
+  }
+
+  if (state === TimerState.PAUSED) {
+    return runningActionPromptVisible
+      ? 'On glasses: tap resumes the timer, double tap stops it.'
+      : 'On glasses: tap opens resume or stop actions. Double tap on Timer resumes. Ring taps stay locked while the timer is active.';
   }
 
   if (glassesPanel === 'settings') {
@@ -786,6 +810,7 @@ function setupRemoteControl() {
   const applyPreset = (minutes: number) => {
     if (!timerState || !bridge) return;
     pushDetailedLog('[REMOTE]', `preset apply ${minutes}`);
+    clearRunningActionPrompt();
     glassesPanel = 'timer';
     homeSelection = 'timer';
     timerState.setPreset(minutes);
@@ -798,11 +823,13 @@ function setupRemoteControl() {
 
     if (state === TimerState.RUNNING) {
       clearRemoteStartPending();
+      clearRunningActionPrompt();
       timerState.toggleStartPause();
       return;
     }
     if (state === TimerState.PAUSED) {
       clearRemoteStartPending();
+      clearRunningActionPrompt();
       glassesPanel = 'timer';
       homeSelection = 'timer';
       timerState.toggleStartPause();
@@ -810,6 +837,7 @@ function setupRemoteControl() {
     }
     if (state === TimerState.IDLE || state === TimerState.DONE) {
       if (remoteStartScheduledAt !== null) return;
+      clearRunningActionPrompt();
       glassesPanel = 'timer';
       homeSelection = 'timer';
       timerState.start();
@@ -825,6 +853,7 @@ function setupRemoteControl() {
     if (!timerState || !bridge) return;
     pushDetailedLog('[REMOTE]', `btn-reset click state=${timerState.getState()}`);
     clearRemoteStartPending();
+    clearRunningActionPrompt();
     timerState.resetToPreset();
   });
 
@@ -1074,21 +1103,59 @@ function handleSingleTap(source: InteractionSource) {
   const panel = effectivePanel();
   pushDetailedLog('[INPUT]', `singleTap panel=${panel} state=${state} source=${source}`);
 
-  if (state === TimerState.RUNNING || state === TimerState.PAUSED) {
+  if (state === TimerState.RUNNING) {
     if (source !== 'glasses') {
       pushDetailedLog('[INPUT]', `singleTap ignored while active source=${source}`);
       return;
     }
 
+    if (runningActionPromptVisible) {
+      clearRemoteStartPending();
+      clearRunningActionPrompt();
+      timerState.pause();
+      return;
+    }
+
+    if (panel === 'timer') {
+      showRunningActionPrompt();
+      return;
+    }
+
     if (panel === 'settings') {
-      settingsField = nextTimerLayoutField(settingsField);
-      pushDetailedLog('[LAYOUT]', `field=${settingsField}`);
+      committedLayoutSettings = adjustTimerLayoutSetting(committedLayoutSettings, settingsField, 1);
+      pushDetailedLog(
+        '[LAYOUT]',
+        `tap adjust field=${settingsField} -> ${committedLayoutSettings.format}/${committedLayoutSettings.vertical}/${committedLayoutSettings.horizontal}`,
+      );
+      persistCurrentLayoutSettings();
       updateRemoteView();
       sendToGlassesImmediate('manual');
       return;
     }
 
     cycleRunningPanels();
+    return;
+  }
+
+  if (state === TimerState.PAUSED) {
+    if (source !== 'glasses') {
+      pushDetailedLog('[INPUT]', `singleTap ignored while paused source=${source}`);
+      return;
+    }
+
+    if (runningActionPromptVisible) {
+      clearRemoteStartPending();
+      clearRunningActionPrompt();
+      timerState.start();
+      return;
+    }
+
+    if (panel === 'timer') {
+      showRunningActionPrompt();
+      return;
+    }
+
+    openTimerPanel(true);
     return;
   }
 
@@ -1102,8 +1169,12 @@ function handleSingleTap(source: InteractionSource) {
   }
 
   if (panel === 'settings') {
-    settingsField = nextTimerLayoutField(settingsField);
-    pushDetailedLog('[LAYOUT]', `field=${settingsField}`);
+    committedLayoutSettings = adjustTimerLayoutSetting(committedLayoutSettings, settingsField, 1);
+    pushDetailedLog(
+      '[LAYOUT]',
+      `tap adjust field=${settingsField} -> ${committedLayoutSettings.format}/${committedLayoutSettings.vertical}/${committedLayoutSettings.horizontal}`,
+    );
+    persistCurrentLayoutSettings();
     updateRemoteView();
     sendToGlassesImmediate('manual');
     return;
@@ -1124,13 +1195,14 @@ function handleDoubleTap(source: InteractionSource): void {
       return;
     }
 
-    if (panel === 'timer') {
+    if (runningActionPromptVisible) {
       clearRemoteStartPending();
-      timerState.toggleStartPause();
+      clearRunningActionPrompt();
+      timerState.resetToPreset();
       return;
     }
 
-    openTimerPanel(true);
+    pushDetailedLog('[INPUT]', `doubleTap ignored while active promptVisible=${runningActionPromptVisible}`);
     return;
   }
 
@@ -1156,6 +1228,7 @@ function handleDoubleTap(source: InteractionSource): void {
   }
 
   clearRemoteStartPending();
+  clearRunningActionPrompt();
   timerState.resetToPreset();
 }
 
@@ -1188,12 +1261,10 @@ function handleSwipe(dir: 1 | -1, source: InteractionSource) {
   }
 
   if (panel === 'settings') {
-    committedLayoutSettings = adjustTimerLayoutSetting(committedLayoutSettings, settingsField, dir);
-    pushDetailedLog(
-      '[LAYOUT]',
-      `adjust field=${settingsField} dir=${dir} -> ${committedLayoutSettings.format}/${committedLayoutSettings.vertical}/${committedLayoutSettings.horizontal}`,
-    );
-    persistCurrentLayoutSettings();
+    settingsField = dir === 1
+      ? nextTimerLayoutField(settingsField)
+      : nextTimerLayoutField(nextTimerLayoutField(settingsField));
+    pushDetailedLog('[LAYOUT]', `swipe field=${settingsField}`);
     updateRemoteView();
     sendToGlassesImmediate('manual');
     return;
@@ -1228,6 +1299,9 @@ function attachTimerStateCallbacks(): void {
 
   timerState.setOnStateChange(() => {
     const state = timerState?.getState();
+    if (state !== TimerState.RUNNING) {
+      clearRunningActionPrompt();
+    }
     if (state === TimerState.RUNNING && lastKnownTimerState !== TimerState.RUNNING) {
       glassesPanel = 'timer';
       homeSelection = 'timer';

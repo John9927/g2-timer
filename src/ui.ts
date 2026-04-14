@@ -30,9 +30,10 @@ export interface GlassesNavigationState {
   panel: GlassesPanel;
   homeSelection: HomeSelection;
   settingsField: TimerLayoutField;
+  runningActionPromptVisible: boolean;
 }
 
-type UiScreenMode = 'home' | 'preset' | 'settings' | 'timer-large' | 'timer-compact';
+type UiScreenMode = 'home' | 'preset' | 'settings' | 'timer-large' | 'timer-compact' | 'timer-action';
 type PixelPattern = number[][];
 
 const DISPLAY_WIDTH = 576;
@@ -245,6 +246,17 @@ function buildCompactTimerContent(state: TimerState, remainingSeconds: number, b
   return time;
 }
 
+function buildRunningActionContent(state: TimerState, remainingSeconds: number): string {
+  const actionLabel = state === TimerState.PAUSED ? 'resume' : 'pause';
+  const title = state === TimerState.PAUSED ? 'Timer paused' : 'Timer running';
+  return [
+    title,
+    formatTime(remainingSeconds),
+    `Tap: ${actionLabel}`,
+    '2Tap: stop',
+  ].join('\n');
+}
+
 function buildSettingsContent(
   settingsField: TimerLayoutField,
   layoutSettings: TimerLayoutSettings,
@@ -260,8 +272,8 @@ function buildSettingsContent(
     `${settingsField === 'vertical' ? '>' : ' '} Vert ${formatTimerLayoutValue('vertical', layoutSettings)}`,
     `${settingsField === 'horizontal' ? '>' : ' '} Horz ${formatTimerLayoutValue('horizontal', layoutSettings)}`,
     `Preview ${preview} ${stateLabel}`,
-    'Tap: next field',
-    'Swipe: change',
+    'Tap: change',
+    'Swipe: next field',
     `2Tap: ${state === TimerState.RUNNING ? 'timer' : 'menu'}`,
   ].join('\n');
 }
@@ -492,6 +504,7 @@ function desiredScreenMode(
 ): UiScreenMode {
   if (navigation.panel === 'home') return 'home';
   if (navigation.panel === 'settings') return 'settings';
+  if ((state === TimerState.RUNNING || state === TimerState.PAUSED) && navigation.runningActionPromptVisible) return 'timer-action';
   if (state === TimerState.IDLE) return 'preset';
   return layoutSettings.format === 'large' ? 'timer-large' : 'timer-compact';
 }
@@ -516,6 +529,10 @@ function buildInitialDisplayContent(
 
   if (screen === 'settings') {
     return buildSettingsContent(navigation.settingsField, layoutSettings, state, remainingSeconds);
+  }
+
+  if (screen === 'timer-action') {
+    return buildRunningActionContent(state, remainingSeconds);
   }
 
   if (screen === 'timer-compact') {
@@ -760,6 +777,7 @@ export async function renderUI(
     panel: 'home',
     homeSelection: 'timer',
     settingsField: 'format',
+    runningActionPromptVisible: false,
   };
   const presetMinutes = options.presetMinutes ?? [];
 
@@ -816,6 +834,7 @@ export async function createPageContainers(
     panel: 'home',
     homeSelection: 'timer',
     settingsField: 'format',
+    runningActionPromptVisible: false,
   },
 ): Promise<boolean> {
   if (!bridge) {
