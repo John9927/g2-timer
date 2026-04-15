@@ -267,16 +267,12 @@ function buildSettingsContent(
   state: TimerState,
   remainingSeconds: number,
 ): string {
-  const preview = formatTime(remainingSeconds);
-  const stateLabel = state === TimerState.IDLE ? 'IDLE' : state;
-
   return [
     'Layout',
     `${settingsField === 'format' ? '>' : ' '} Size ${formatTimerLayoutValue('format', layoutSettings)}`,
     `${settingsField === 'vertical' ? '>' : ' '} Vert ${formatTimerLayoutValue('vertical', layoutSettings)}`,
     `${settingsField === 'horizontal' ? '>' : ' '} Horz ${formatTimerLayoutValue('horizontal', layoutSettings)}`,
     `${settingsField === 'doneBlinkCount' ? '>' : ' '} Blink ${formatTimerLayoutValue('doneBlinkCount', layoutSettings)}`,
-    `Preview ${preview} ${stateLabel}`,
     'Tap: change',
     'Swipe: next field',
     `2Tap: ${state === TimerState.RUNNING ? 'timer' : 'menu'}`,
