@@ -394,6 +394,7 @@ function cycleRunningPanels(): void {
 }
 
 function persistCurrentLayoutSettings(): void {
+  timerState?.setDoneBlinkCount(committedLayoutSettings.doneBlinkCount);
   void persistLayoutSettings(committedLayoutSettings).catch((error) => {
     pushDetailedLog('[LAYOUT]', `persist error ${String(error)}`);
   });
@@ -516,6 +517,7 @@ function formatTimerLayoutLabel(): string {
     formatTimerLayoutValue('format', committedLayoutSettings),
     formatTimerLayoutValue('vertical', committedLayoutSettings),
     formatTimerLayoutValue('horizontal', committedLayoutSettings),
+    `Blink ${formatTimerLayoutValue('doneBlinkCount', committedLayoutSettings)}`,
   ].join(' / ');
 }
 
@@ -1159,6 +1161,20 @@ function handleSingleTap(source: InteractionSource) {
     return;
   }
 
+  if (state === TimerState.DONE) {
+    if (source !== 'glasses') {
+      pushDetailedLog('[INPUT]', `singleTap ignored while done source=${source}`);
+      return;
+    }
+
+    clearRemoteStartPending();
+    clearRunningActionPrompt();
+    glassesPanel = 'timer';
+    homeSelection = 'timer';
+    timerState.resetToPreset();
+    return;
+  }
+
   if (panel === 'home') {
     if (homeSelection === 'settings') {
       openSettingsPanel();
@@ -1306,6 +1322,10 @@ function attachTimerStateCallbacks(): void {
       glassesPanel = 'timer';
       homeSelection = 'timer';
     }
+    if (state === TimerState.DONE) {
+      glassesPanel = 'timer';
+      homeSelection = 'timer';
+    }
     lastKnownTimerState = state ?? null;
     pushDetailedLog('[CALLBACK]', `onStateChange state=${state} t=${timerState ? formatTime(timerState.getRemainingSeconds()) : '--:--'}`);
     updateRemoteView();
@@ -1340,6 +1360,7 @@ async function init() {
       pushDetailedLog('[PRESET]', `loaded local shortcuts=${activePresetMinutes().join('/')}`);
       timerState = new TimerStateManager();
       timerState.setOnDebugLog((line) => pushDetailedLog('', line));
+      timerState.setDoneBlinkCount(committedLayoutSettings.doneBlinkCount);
       attachTimerStateCallbacks();
       lastKnownTimerState = timerState.getState();
       const restoredLocalTimerSnapshot = await loadTimerRuntimeSnapshot(null);
@@ -1369,6 +1390,7 @@ async function init() {
 
     timerState = new TimerStateManager();
     timerState.setOnDebugLog((line) => pushDetailedLog('', line));
+    timerState.setDoneBlinkCount(committedLayoutSettings.doneBlinkCount);
     attachTimerStateCallbacks();
     lastKnownTimerState = timerState.getState();
 

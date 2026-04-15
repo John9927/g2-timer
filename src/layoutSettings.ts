@@ -3,7 +3,8 @@ export const TIMER_LAYOUT_STORAGE_KEY = 'g2-timer:layout-settings:v1';
 export const TIMER_LAYOUT_FORMATS = ['large', 'compact'] as const;
 export const TIMER_LAYOUT_VERTICALS = ['top', 'center', 'bottom'] as const;
 export const TIMER_LAYOUT_HORIZONTALS = ['left', 'center', 'right'] as const;
-export const TIMER_LAYOUT_FIELDS = ['format', 'vertical', 'horizontal'] as const;
+export const TIMER_DONE_BLINK_COUNTS = [0, 1, 2, 3, 5, 10] as const;
+export const TIMER_LAYOUT_FIELDS = ['format', 'vertical', 'horizontal', 'doneBlinkCount'] as const;
 
 export type TimerLayoutFormat = typeof TIMER_LAYOUT_FORMATS[number];
 export type TimerLayoutVertical = typeof TIMER_LAYOUT_VERTICALS[number];
@@ -14,6 +15,7 @@ export interface TimerLayoutSettings {
   format: TimerLayoutFormat;
   vertical: TimerLayoutVertical;
   horizontal: TimerLayoutHorizontal;
+  doneBlinkCount: number;
 }
 
 export interface TimerLayoutMenuState {
@@ -30,6 +32,7 @@ export const DEFAULT_TIMER_LAYOUT_SETTINGS: TimerLayoutSettings = {
   format: 'large',
   vertical: 'center',
   horizontal: 'center',
+  doneBlinkCount: 0,
 };
 
 function isTimerLayoutFormat(value: unknown): value is TimerLayoutFormat {
@@ -44,7 +47,17 @@ function isTimerLayoutHorizontal(value: unknown): value is TimerLayoutHorizontal
   return typeof value === 'string' && TIMER_LAYOUT_HORIZONTALS.includes(value as TimerLayoutHorizontal);
 }
 
-function nextInCycle<T extends string>(values: readonly T[], current: T, dir: 1 | -1): T {
+function normalizeDoneBlinkCount(value: unknown): number {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const rounded = Math.max(0, Math.round(value));
+    const matched = TIMER_DONE_BLINK_COUNTS.find((candidate) => candidate === rounded);
+    return matched ?? DEFAULT_TIMER_LAYOUT_SETTINGS.doneBlinkCount;
+  }
+
+  return DEFAULT_TIMER_LAYOUT_SETTINGS.doneBlinkCount;
+}
+
+function nextInCycle<T extends string | number>(values: readonly T[], current: T, dir: 1 | -1): T {
   const currentIndex = values.indexOf(current);
   const safeIndex = currentIndex >= 0 ? currentIndex : 0;
   const nextIndex = (safeIndex + dir + values.length) % values.length;
@@ -58,11 +71,16 @@ export function normalizeTimerLayoutSettings(input: unknown): TimerLayoutSetting
     format: isTimerLayoutFormat(candidate.format) ? candidate.format : DEFAULT_TIMER_LAYOUT_SETTINGS.format,
     vertical: isTimerLayoutVertical(candidate.vertical) ? candidate.vertical : DEFAULT_TIMER_LAYOUT_SETTINGS.vertical,
     horizontal: isTimerLayoutHorizontal(candidate.horizontal) ? candidate.horizontal : DEFAULT_TIMER_LAYOUT_SETTINGS.horizontal,
+    doneBlinkCount: normalizeDoneBlinkCount(candidate.doneBlinkCount),
   };
 }
 
 export function formatTimerLayoutValue(field: TimerLayoutField, settings: TimerLayoutSettings): string {
   const value = settings[field];
+  if (field === 'doneBlinkCount') {
+    return value === 0 ? 'Infinite' : `${value}x`;
+  }
+
   switch (value) {
     case 'large':
       return 'Large';
@@ -106,9 +124,16 @@ export function adjustTimerLayoutSetting(
     };
   }
 
+  if (field === 'horizontal') {
+    return {
+      ...settings,
+      horizontal: nextInCycle(TIMER_LAYOUT_HORIZONTALS, settings.horizontal, dir),
+    };
+  }
+
   return {
     ...settings,
-    horizontal: nextInCycle(TIMER_LAYOUT_HORIZONTALS, settings.horizontal, dir),
+    doneBlinkCount: nextInCycle(TIMER_DONE_BLINK_COUNTS, normalizeDoneBlinkCount(settings.doneBlinkCount), dir),
   };
 }
 

@@ -234,7 +234,7 @@ function buildHomeContent(
 
 function buildTimerOverlayText(state: TimerState, blinkVisible: boolean): string {
   if (state === TimerState.DONE) {
-    return blinkVisible ? 'DONE' : ' ';
+    return blinkVisible ? '0:00' : ' ';
   }
 
   return ' ';
@@ -242,7 +242,7 @@ function buildTimerOverlayText(state: TimerState, blinkVisible: boolean): string
 
 function buildCompactTimerContent(state: TimerState, remainingSeconds: number, blinkVisible: boolean): string {
   if (state === TimerState.DONE) {
-    return blinkVisible ? 'DONE' : ' ';
+    return blinkVisible ? '0:00' : ' ';
   }
 
   const time = formatTime(remainingSeconds);
@@ -275,6 +275,7 @@ function buildSettingsContent(
     `${settingsField === 'format' ? '>' : ' '} Size ${formatTimerLayoutValue('format', layoutSettings)}`,
     `${settingsField === 'vertical' ? '>' : ' '} Vert ${formatTimerLayoutValue('vertical', layoutSettings)}`,
     `${settingsField === 'horizontal' ? '>' : ' '} Horz ${formatTimerLayoutValue('horizontal', layoutSettings)}`,
+    `${settingsField === 'doneBlinkCount' ? '>' : ' '} Blink ${formatTimerLayoutValue('doneBlinkCount', layoutSettings)}`,
     `Preview ${preview} ${stateLabel}`,
     'Tap: change',
     'Swipe: next field',

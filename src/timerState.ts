@@ -1,5 +1,4 @@
 import {
-  BLINK_DURATION_MS,
   BLINK_INTERVAL_MS,
   DEFAULT_PRESET_MINUTES,
   MAX_PRESET_MINUTES,
@@ -20,6 +19,8 @@ export interface TimerStateData {
   blinkIntervalId: number | null;
   blinkStartTime: number | null;
   isBlinkingVisible: boolean;
+  doneBlinkCount: number;
+  blinkToggleCount: number;
 }
 
 export class TimerStateManager {
@@ -32,6 +33,8 @@ export class TimerStateManager {
     blinkIntervalId: null,
     blinkStartTime: null,
     isBlinkingVisible: true,
+    doneBlinkCount: 0,
+    blinkToggleCount: 0,
   };
 
   private onUpdateCallback: (() => void) | null = null;
@@ -93,6 +96,14 @@ export class TimerStateManager {
       return this.data.isBlinkingVisible;
     }
     return true; // Always visible when not blinking
+  }
+
+  setDoneBlinkCount(count: number): void {
+    const normalized = typeof count === 'number' && Number.isFinite(count)
+      ? Math.max(0, Math.round(count))
+      : 0;
+    this.data.doneBlinkCount = normalized;
+    this.debug(`setDoneBlinkCount ${normalized}`);
   }
 
   private normalizePresetMinutes(minutes: number): number {
@@ -310,16 +321,16 @@ export class TimerStateManager {
     this.stopBlink();
     this.data.blinkStartTime = Date.now();
     this.data.isBlinkingVisible = true;
-    this.debug(`startBlink duration=${BLINK_DURATION_MS}ms interval=${BLINK_INTERVAL_MS}ms`);
+    this.data.blinkToggleCount = 0;
+    this.debug(`startBlink interval=${BLINK_INTERVAL_MS}ms`);
     this.data.blinkIntervalId = window.setInterval(() => {
-      const elapsed = Date.now() - (this.data.blinkStartTime || 0);
-      if (elapsed >= BLINK_DURATION_MS) {
-        this.debug('blink finished by duration');
-        this.stopBlink();
-        return;
-      }
       this.data.isBlinkingVisible = !this.data.isBlinkingVisible;
-      this.debug(`blink toggle visible=${this.data.isBlinkingVisible} elapsed=${elapsed}ms`);
+      this.data.blinkToggleCount += 1;
+      this.debug(`blink toggle visible=${this.data.isBlinkingVisible}`);
+      if (this.data.doneBlinkCount > 0 && this.data.blinkToggleCount >= this.data.doneBlinkCount * 2) {
+        this.debug(`blink limit reached count=${this.data.doneBlinkCount}`);
+        this.stopBlink();
+      }
       if (this.onStateChangeCallback) {
         this.onStateChangeCallback();
       }
@@ -334,6 +345,7 @@ export class TimerStateManager {
     }
     this.data.blinkStartTime = null;
     this.data.isBlinkingVisible = true; // Reset to visible
+    this.data.blinkToggleCount = 0;
   }
 
   cleanup(): void {
