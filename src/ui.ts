@@ -233,15 +233,19 @@ function buildHomeContent(
 }
 
 function buildTimerOverlayText(state: TimerState, blinkVisible: boolean): string {
+  if (state === TimerState.DONE) {
+    return blinkVisible ? 'DONE' : ' ';
+  }
+
   return ' ';
 }
 
 function buildCompactTimerContent(state: TimerState, remainingSeconds: number, blinkVisible: boolean): string {
-  const time = formatTime(remainingSeconds);
-
-  if (state === TimerState.DONE && !blinkVisible) {
-    return ' ';
+  if (state === TimerState.DONE) {
+    return blinkVisible ? 'DONE' : ' ';
   }
+
+  const time = formatTime(remainingSeconds);
 
   return time;
 }
