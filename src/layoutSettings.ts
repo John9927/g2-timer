@@ -105,6 +105,10 @@ export function nextTimerLayoutField(field: TimerLayoutField): TimerLayoutField 
   return nextInCycle(TIMER_LAYOUT_FIELDS, field, 1);
 }
 
+export function previousTimerLayoutField(field: TimerLayoutField): TimerLayoutField {
+  return nextInCycle(TIMER_LAYOUT_FIELDS, field, -1);
+}
+
 export function adjustTimerLayoutSetting(
   settings: TimerLayoutSettings,
   field: TimerLayoutField,

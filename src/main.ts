@@ -17,6 +17,7 @@ import {
   formatTimerLayoutValue,
   loadTimerLayoutSettings,
   nextTimerLayoutField,
+  previousTimerLayoutField,
   saveTimerLayoutSettings,
   type TimerLayoutField,
   type TimerLayoutSettings,
@@ -687,6 +688,7 @@ function updateRemoteView() {
       if (field === 'format') isSelected = committedLayoutSettings.format === value;
       if (field === 'vertical') isSelected = committedLayoutSettings.vertical === value;
       if (field === 'horizontal') isSelected = committedLayoutSettings.horizontal === value;
+      if (field === 'doneBlinkCount') isSelected = String(committedLayoutSettings.doneBlinkCount) === value;
       button.classList.toggle('selected', isSelected);
       (button as HTMLButtonElement).disabled = !connected;
     });
@@ -917,9 +919,10 @@ function setupRemoteControl() {
       if (!field || !value) return;
 
       pushDetailedLog('[REMOTE]', `layout click field=${field} value=${value}`);
+      const normalizedValue = field === 'doneBlinkCount' ? Number(value) : value;
       committedLayoutSettings = {
         ...committedLayoutSettings,
-        [field]: value,
+        [field]: normalizedValue,
       } as TimerLayoutSettings;
       if (isIdleOnGlasses()) {
         homeSelection = 'settings';
@@ -1279,7 +1282,7 @@ function handleSwipe(dir: 1 | -1, source: InteractionSource) {
   if (panel === 'settings') {
     settingsField = dir === 1
       ? nextTimerLayoutField(settingsField)
-      : nextTimerLayoutField(nextTimerLayoutField(settingsField));
+      : previousTimerLayoutField(settingsField);
     pushDetailedLog('[LAYOUT]', `swipe field=${settingsField}`);
     updateRemoteView();
     sendToGlassesImmediate('manual');
