@@ -1,7 +1,7 @@
 export const TIMER_LAYOUT_STORAGE_KEY = 'g2-timer:layout-settings:v1';
 
 export const TIMER_LAYOUT_FORMATS = ['large', 'compact'] as const;
-export const TIMER_LAYOUT_VERTICALS = ['top', 'center', 'bottom'] as const;
+export const TIMER_LAYOUT_VERTICALS = ['top', 'mid', 'center'] as const;
 export const TIMER_LAYOUT_HORIZONTALS = ['left', 'center', 'right'] as const;
 export const TIMER_DONE_BLINK_COUNTS = [0, 1, 2, 3, 5, 10] as const;
 export const TIMER_LAYOUT_FIELDS = ['format', 'vertical', 'horizontal', 'doneBlinkCount'] as const;
@@ -88,10 +88,10 @@ export function formatTimerLayoutValue(field: TimerLayoutField, settings: TimerL
       return 'Small text';
     case 'top':
       return 'Top';
+    case 'mid':
+      return 'Mid';
     case 'center':
       return 'Center';
-    case 'bottom':
-      return 'Bottom';
     case 'left':
       return 'Left';
     case 'right':

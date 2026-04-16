@@ -30,6 +30,7 @@ import {
   type TimerPresetSettings,
 } from './presetSettings';
 import { loadTimerRuntimeSnapshot, saveTimerRuntimeSnapshot } from './timerStorage';
+import { getPreviewAnchor } from './timerLayoutGeometry';
 
 const REMOTE_START_DELAY_MS = 3000;
 const REMOTE_START_COUNTDOWN_INTERVAL_MS = 1000;
@@ -613,19 +614,24 @@ function getPhonePanelLabel(): string {
 }
 
 function getPhonePositionLabel(settings: TimerLayoutSettings): string {
-  const vertical = settings.vertical === 'top' ? 'Top' : settings.vertical === 'bottom' ? 'Bottom' : 'Center';
-  const horizontal = settings.horizontal === 'left' ? 'Left' : settings.horizontal === 'right' ? 'Right' : 'Center';
+  const vertical = settings.vertical === 'top' ? 'Top' : settings.vertical === 'mid' ? 'Mid' : 'Center';
+  const horizontal = settings.horizontal === 'left' ? 'Left' : settings.horizontal === 'center' ? 'Center' : 'Right';
   return `${vertical} ${horizontal}`;
 }
 
-function getPreviewPositionClass(settings: TimerLayoutSettings): string {
-  if (settings.vertical === 'top' && settings.horizontal === 'left') return 'pos-top-left';
-  if (settings.vertical === 'top' && settings.horizontal === 'right') return 'pos-top-right';
-  if (settings.vertical === 'bottom' && settings.horizontal === 'left') return 'pos-bottom-left';
-  if (settings.vertical === 'bottom' && settings.horizontal === 'right') return 'pos-bottom-right';
-  if (settings.vertical === 'top') return 'pos-top-right';
-  if (settings.vertical === 'bottom') return 'pos-bottom-right';
-  return settings.horizontal === 'left' ? 'pos-bottom-left' : 'pos-bottom-right';
+function applyPreviewTimerLayout(
+  previewTimerEl: HTMLElement,
+  settings: TimerLayoutSettings,
+  timeText: string,
+): void {
+  const anchor = getPreviewAnchor(settings, timeText);
+
+  previewTimerEl.className = `preview-timer ${settings.format === 'compact' ? 'size-compact' : 'size-large'}`;
+  previewTimerEl.style.setProperty('--preview-left', `${anchor.leftPercent.toFixed(3)}%`);
+  previewTimerEl.style.setProperty('--preview-top', `${anchor.topPercent.toFixed(3)}%`);
+  previewTimerEl.style.setProperty('--preview-width', `${anchor.widthPercent.toFixed(3)}%`);
+  previewTimerEl.style.setProperty('--preview-height', `${anchor.heightPercent.toFixed(3)}%`);
+  previewTimerEl.style.setProperty('--preview-transform', anchor.transform);
 }
 
 function getGestureTitle(): string {
@@ -704,7 +710,6 @@ function updateRemoteView() {
   const previewTime = document.getElementById('phone-preview-time');
   const previewCaption = document.getElementById('phone-preview-caption');
   const phoneLayoutMeta = document.getElementById('phone-layout-meta');
-  const phoneShortcutsMeta = document.getElementById('phone-shortcuts-meta');
   const phoneStateLabel = document.getElementById('phone-state-label');
   const phonePanelLabel = document.getElementById('phone-panel-label');
   const phoneGestureTitle = document.getElementById('phone-gesture-title');
@@ -739,16 +744,17 @@ function updateRemoteView() {
     const preset = timerState.getSelectedPreset();
     const state = timerState.getState();
     const remaining = timerState.getRemainingSeconds();
+    const previewTimeValue = formatTime(remaining);
     const canEditPreset = connected && !pending && state === TimerState.IDLE;
     const currentPanel = effectivePanel();
     if (heroSubtitle) {
       heroSubtitle.textContent = getPhonePositionLabel(committedLayoutSettings);
     }
     if (previewTime) {
-      previewTime.textContent = formatTime(remaining);
+      previewTime.textContent = previewTimeValue;
     }
     if (previewTimerEl) {
-      previewTimerEl.className = `preview-timer ${committedLayoutSettings.format === 'compact' ? 'size-compact' : 'size-large'} ${getPreviewPositionClass(committedLayoutSettings)}`;
+      applyPreviewTimerLayout(previewTimerEl, committedLayoutSettings, previewTimeValue);
     }
     if (previewCaption) {
       previewCaption.textContent = pending
@@ -763,9 +769,6 @@ function updateRemoteView() {
     }
     if (phoneLayoutMeta) {
       phoneLayoutMeta.textContent = `Size: ${formatTimerLayoutValue('format', committedLayoutSettings)}`;
-    }
-    if (phoneShortcutsMeta) {
-      phoneShortcutsMeta.textContent = `Shortcuts: ${activePresetMinutes().join(', ')}`;
     }
     if (phonePanelLabel) {
       phonePanelLabel.textContent = `Pos: ${getPhonePositionLabel(committedLayoutSettings)}`;
@@ -858,13 +861,11 @@ function updateRemoteView() {
     layoutBtns.forEach((button) => { button.classList.remove('selected'); (button as HTMLButtonElement).disabled = true; });
     dashboardSizeBtns.forEach((button) => { button.classList.remove('active'); (button as HTMLButtonElement).disabled = true; });
     dashboardPositionBtns.forEach((button) => { button.classList.remove('active'); (button as HTMLButtonElement).disabled = true; });
-    if (heroSubtitle) heroSubtitle.textContent = 'Top Right';
     if (previewTime) previewTime.textContent = '05:00';
-    if (previewTimerEl) previewTimerEl.className = 'preview-timer size-large pos-top-right';
+    if (previewTimerEl) applyPreviewTimerLayout(previewTimerEl, committedLayoutSettings, '05:00');
     if (previewCaption) previewCaption.textContent = 'Preset ready';
-    if (phoneLayoutMeta) phoneLayoutMeta.textContent = 'Size: Large';
-    if (phoneShortcutsMeta) phoneShortcutsMeta.textContent = 'Shortcuts: 1, 3, 5, 10, 15, 30, 60';
-    if (phonePanelLabel) phonePanelLabel.textContent = 'Pos: Top_R';
+    if (phoneLayoutMeta) phoneLayoutMeta.textContent = `Size: ${formatTimerLayoutValue('format', committedLayoutSettings)}`;
+    if (phonePanelLabel) phonePanelLabel.textContent = `Pos: ${getPhonePositionLabel(committedLayoutSettings)}`;
     if (phoneGestureTitle) phoneGestureTitle.textContent = 'Ready when connected';
     if (exactMinuteInput && document.activeElement !== exactMinuteInput) exactMinuteInput.value = '';
     if (exactMinuteInput) exactMinuteInput.disabled = true;
