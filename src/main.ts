@@ -74,6 +74,7 @@ let lastRawInteractionEventType: number | null = null;
 let lastRawInteractionEventSource: number | null = null;
 let lastRawInteractionEventAt = 0;
 let lastKnownTimerState: TimerState | null = null;
+let activePhonePage: 'home' | 'settings' | 'advanced' = 'home';
 
 const RAW_EVENT_FALLBACK_WINDOW_MS = 500;
 
@@ -503,7 +504,7 @@ function recordRenderTelemetry(
   );
 }
 
-// ── Phone UI ──────────────────────────────────────────────────────
+// â”€â”€ Phone UI â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function clearRemoteStartPending() {
   const hadTimeout = remoteStartTimeoutId !== null;
   const hadInterval = remoteStartCountdownIntervalId !== null;
@@ -555,18 +556,18 @@ function getDisplaySummary(): string {
     return `Home menu - timer paused ${formatTime(timerState.getRemainingSeconds())}`;
   }
   if (false && glassesPanel === 'settings') {
-    return `Timer ${state.toLowerCase()} · ${formatTime(timerState.getRemainingSeconds())}`;
+    return `Timer ${state.toLowerCase()} Â· ${formatTime(timerState.getRemainingSeconds())}`;
   }
 
   if (false && glassesPanel === 'settings') {
-    return `Layout settings · ${formatTimerLayoutLabel()}`;
+    return `Layout settings Â· ${formatTimerLayoutLabel()}`;
   }
 
   if (false && glassesPanel === 'timer') {
-    return `Timer setup · ${timerState.getSelectedPreset()} min`;
+    return `Timer setup Â· ${timerState.getSelectedPreset()} min`;
   }
 
-  return `Home menu · ${homeSelection === 'timer' ? 'Timer' : 'Layout settings'}`;
+  return `Home menu Â· ${homeSelection === 'timer' ? 'Timer' : 'Layout settings'}`;
 }
 
 function getRemoteGestureHelp(): string {
@@ -598,6 +599,72 @@ function getRemoteGestureHelp(): string {
   return 'On glasses: swipe chooses Timer or Settings, tap opens the selected screen, double tap exits.';
 }
 
+function getPhoneStateLabel(state: TimerState): string {
+  if (state === TimerState.RUNNING) return 'Running';
+  if (state === TimerState.PAUSED) return 'Paused';
+  if (state === TimerState.DONE) return 'Done';
+  return 'Idle';
+}
+
+function getPhonePanelLabel(): string {
+  if (glassesPanel === 'settings') return 'Layout settings';
+  if (glassesPanel === 'timer') return 'Timer setup';
+  return homeSelection === 'settings' ? 'Home / settings' : 'Home / timer';
+}
+
+function getPhonePositionLabel(settings: TimerLayoutSettings): string {
+  const vertical = settings.vertical === 'top' ? 'Top' : settings.vertical === 'bottom' ? 'Bottom' : 'Center';
+  const horizontal = settings.horizontal === 'left' ? 'Left' : settings.horizontal === 'right' ? 'Right' : 'Center';
+  return `${vertical} ${horizontal}`;
+}
+
+function getPreviewPositionClass(settings: TimerLayoutSettings): string {
+  if (settings.vertical === 'top' && settings.horizontal === 'left') return 'pos-top-left';
+  if (settings.vertical === 'top' && settings.horizontal === 'right') return 'pos-top-right';
+  if (settings.vertical === 'bottom' && settings.horizontal === 'left') return 'pos-bottom-left';
+  if (settings.vertical === 'bottom' && settings.horizontal === 'right') return 'pos-bottom-right';
+  if (settings.vertical === 'top') return 'pos-top-right';
+  if (settings.vertical === 'bottom') return 'pos-bottom-right';
+  return settings.horizontal === 'left' ? 'pos-bottom-left' : 'pos-bottom-right';
+}
+
+function getGestureTitle(): string {
+  if (!timerState) return 'Ready when connected';
+  const state = timerState.getState();
+  if (state === TimerState.RUNNING) return runningActionPromptVisible ? 'Pause or stop' : 'Timer in progress';
+  if (state === TimerState.PAUSED) return runningActionPromptVisible ? 'Resume or stop' : 'Timer paused';
+  if (glassesPanel === 'settings') return 'Layout controls';
+  if (glassesPanel === 'timer') return 'Preset controls';
+  return 'Home navigation';
+}
+
+function setActivePhonePage(nextPage: typeof activePhonePage): void {
+  activePhonePage = nextPage;
+  document.querySelectorAll<HTMLElement>('.page').forEach((page) => {
+    page.classList.toggle('active', page.dataset.page === nextPage);
+  });
+  document.querySelectorAll<HTMLElement>('.nav-tab').forEach((tab) => {
+    tab.classList.toggle('active', tab.dataset.pageTarget === nextPage);
+  });
+}
+
+function setupPhoneNavigation(): void {
+  document.querySelectorAll<HTMLElement>('.nav-tab').forEach((tab) => {
+    tab.addEventListener('click', () => {
+      const target = tab.dataset.pageTarget as typeof activePhonePage | undefined;
+      if (!target) return;
+      setActivePhonePage(target);
+    });
+  });
+
+  const editCustomButton = document.getElementById('dashboard-edit-custom');
+  const customSetSection = document.getElementById('custom-set-section');
+  editCustomButton?.addEventListener('click', () => {
+    setActivePhonePage('settings');
+    customSetSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+}
+
 function ensurePresetButtonsRendered(): void {
   const container = document.getElementById('remote-preset-buttons');
   if (!container) return;
@@ -619,22 +686,35 @@ function updateRemoteView() {
   const status = document.getElementById('remote-status');
   const btnStart = document.getElementById('btn-start-pause') as HTMLButtonElement | null;
   const btnReset = document.getElementById('btn-reset') as HTMLButtonElement | null;
+  const btnStartIcon = document.getElementById('btn-start-icon');
+  const btnStartLabel = document.getElementById('btn-start-label');
   const presetBtns = document.querySelectorAll('#remote-preset-buttons .preset-btn');
   const displaySummary = document.getElementById('glasses-view-summary');
   const screenBtns = document.querySelectorAll('#remote-screen-buttons .screen-btn');
   const layoutBtns = document.querySelectorAll('#layout-controls .layout-btn');
+  const dashboardSizeBtns = document.querySelectorAll('.size-btn');
+  const dashboardPositionBtns = document.querySelectorAll('.position-btn');
   const exactMinuteInput = document.getElementById('exact-minute-input') as HTMLInputElement | null;
   const customPresetsInput = document.getElementById('custom-presets-input') as HTMLInputElement | null;
   const applyMinuteBtn = document.getElementById('apply-minute-btn') as HTMLButtonElement | null;
   const saveCustomPresetsBtn = document.getElementById('save-custom-presets') as HTMLButtonElement | null;
   const remoteGestureHelp = document.getElementById('remote-gesture-help');
+  const heroSubtitle = document.getElementById('hero-subtitle');
+  const previewTimerEl = document.getElementById('phone-preview-timer');
+  const previewTime = document.getElementById('phone-preview-time');
+  const previewCaption = document.getElementById('phone-preview-caption');
+  const phoneLayoutMeta = document.getElementById('phone-layout-meta');
+  const phoneShortcutsMeta = document.getElementById('phone-shortcuts-meta');
+  const phoneStateLabel = document.getElementById('phone-state-label');
+  const phonePanelLabel = document.getElementById('phone-panel-label');
+  const phoneGestureTitle = document.getElementById('phone-gesture-title');
 
   const connected = !!(bridge && timerState);
   if (status) {
     status.textContent = connected
-      ? (isInitialized ? 'Connected – display ready' : 'Connected – initializing...')
+      ? (isInitialized ? 'Connected - display ready' : 'Connected - initializing...')
       : 'Connecting...';
-    status.className = connected ? 'connected' : '';
+    status.className = connected ? 'status-pill connected' : 'status-pill';
   }
   if (displaySummary) {
     displaySummary.textContent = getDisplaySummary();
@@ -658,8 +738,41 @@ function updateRemoteView() {
   if (timerState) {
     const preset = timerState.getSelectedPreset();
     const state = timerState.getState();
+    const remaining = timerState.getRemainingSeconds();
     const canEditPreset = connected && !pending && state === TimerState.IDLE;
     const currentPanel = effectivePanel();
+    if (heroSubtitle) {
+      heroSubtitle.textContent = getPhonePositionLabel(committedLayoutSettings);
+    }
+    if (previewTime) {
+      previewTime.textContent = formatTime(remaining);
+    }
+    if (previewTimerEl) {
+      previewTimerEl.className = `preview-timer ${committedLayoutSettings.format === 'compact' ? 'size-compact' : 'size-large'} ${getPreviewPositionClass(committedLayoutSettings)}`;
+    }
+    if (previewCaption) {
+      previewCaption.textContent = pending
+        ? 'Remote start delay'
+        : state === TimerState.RUNNING
+          ? 'Projection active'
+          : state === TimerState.PAUSED
+            ? 'Projection paused'
+            : state === TimerState.DONE
+              ? 'Sequence complete'
+              : `${preset} minute preset`;
+    }
+    if (phoneLayoutMeta) {
+      phoneLayoutMeta.textContent = `Size: ${formatTimerLayoutValue('format', committedLayoutSettings)}`;
+    }
+    if (phoneShortcutsMeta) {
+      phoneShortcutsMeta.textContent = `Shortcuts: ${activePresetMinutes().join(', ')}`;
+    }
+    if (phonePanelLabel) {
+      phonePanelLabel.textContent = `Pos: ${getPhonePositionLabel(committedLayoutSettings)}`;
+    }
+    if (phoneGestureTitle) {
+      phoneGestureTitle.textContent = getGestureTitle();
+    }
     presetBtns.forEach(b => {
       const p = parseInt((b as HTMLElement).dataset.preset || '', 10);
       b.classList.toggle('selected', p === preset);
@@ -692,14 +805,49 @@ function updateRemoteView() {
       button.classList.toggle('selected', isSelected);
       (button as HTMLButtonElement).disabled = !connected;
     });
+    dashboardSizeBtns.forEach((button) => {
+      const size = (button as HTMLElement).dataset.size || '';
+      const isSelected = committedLayoutSettings.format === size;
+      button.classList.toggle('active', isSelected);
+      (button as HTMLButtonElement).disabled = !connected;
+    });
+    dashboardPositionBtns.forEach((button) => {
+      const vertical = (button as HTMLElement).dataset.vertical || '';
+      const horizontal = (button as HTMLElement).dataset.horizontal || '';
+      const isSelected =
+        committedLayoutSettings.vertical === vertical &&
+        committedLayoutSettings.horizontal === horizontal;
+      button.classList.toggle('active', isSelected);
+      (button as HTMLButtonElement).disabled = !connected;
+    });
     if (btnStart) {
       btnStart.disabled = !connected;
       const running = state === TimerState.RUNNING;
       if (pending) {
-        btnStart.textContent = 'Please wait\u2026';
+        if (btnStartIcon) {
+          btnStartIcon.innerHTML = `
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <circle cx="6" cy="12" r="1.2" fill="currentColor" stroke="none"></circle>
+              <circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"></circle>
+              <circle cx="18" cy="12" r="1.2" fill="currentColor" stroke="none"></circle>
+            </svg>`;
+        }
+        if (btnStartLabel) btnStartLabel.textContent = 'Wait';
         btnStart.classList.remove('pause-mode');
       } else {
-        btnStart.textContent = running ? 'Pause' : 'Start';
+        if (btnStartIcon) {
+          btnStartIcon.innerHTML = running
+            ? `
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="7" y="6" width="3.5" height="12" rx="1" fill="currentColor" stroke="none"></rect>
+                <rect x="13.5" y="6" width="3.5" height="12" rx="1" fill="currentColor" stroke="none"></rect>
+              </svg>`
+            : `
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round">
+                <path d="M9 7.5 17 12l-8 4.5z" fill="currentColor" stroke="none"></path>
+              </svg>`;
+        }
+        if (btnStartLabel) btnStartLabel.textContent = running ? 'Pause' : 'Play';
         btnStart.classList.toggle('pause-mode', running);
       }
     }
@@ -708,15 +856,32 @@ function updateRemoteView() {
     presetBtns.forEach(b => { b.classList.remove('selected'); (b as HTMLButtonElement).disabled = true; });
     screenBtns.forEach((button) => { button.classList.remove('selected'); (button as HTMLButtonElement).disabled = true; });
     layoutBtns.forEach((button) => { button.classList.remove('selected'); (button as HTMLButtonElement).disabled = true; });
+    dashboardSizeBtns.forEach((button) => { button.classList.remove('active'); (button as HTMLButtonElement).disabled = true; });
+    dashboardPositionBtns.forEach((button) => { button.classList.remove('active'); (button as HTMLButtonElement).disabled = true; });
+    if (heroSubtitle) heroSubtitle.textContent = 'Top Right';
+    if (previewTime) previewTime.textContent = '05:00';
+    if (previewTimerEl) previewTimerEl.className = 'preview-timer size-large pos-top-right';
+    if (previewCaption) previewCaption.textContent = 'Preset ready';
+    if (phoneLayoutMeta) phoneLayoutMeta.textContent = 'Size: Large';
+    if (phoneShortcutsMeta) phoneShortcutsMeta.textContent = 'Shortcuts: 1, 3, 5, 10, 15, 30, 60';
+    if (phonePanelLabel) phonePanelLabel.textContent = 'Pos: Top_R';
+    if (phoneGestureTitle) phoneGestureTitle.textContent = 'Ready when connected';
     if (exactMinuteInput && document.activeElement !== exactMinuteInput) exactMinuteInput.value = '';
     if (exactMinuteInput) exactMinuteInput.disabled = true;
     if (applyMinuteBtn) applyMinuteBtn.disabled = true;
-    if (btnStart) { btnStart.disabled = true; btnStart.textContent = 'Start'; }
+    if (btnStart) { btnStart.disabled = true; btnStart.classList.remove('pause-mode'); }
+    if (btnStartIcon) {
+      btnStartIcon.innerHTML = `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round">
+          <path d="M9 7.5 17 12l-8 4.5z" fill="currentColor" stroke="none"></path>
+        </svg>`;
+    }
+    if (btnStartLabel) btnStartLabel.textContent = 'Play';
     if (btnReset) btnReset.disabled = true;
   }
 }
 
-// ── Fire-and-forget glasses render (never awaited, never blocks) ──
+// â”€â”€ Fire-and-forget glasses render (never awaited, never blocks) â”€â”€
 // Send every tick so display updates every 1s; overlapping pushes allowed.
 function sendToGlasses(reason: RenderReason = 'tick') {
   if (!bridge || !timerState) {
@@ -798,13 +963,17 @@ function sendToGlassesImmediate(reason: RenderReason = 'manual') {
   });
 }
 
-// ── Remote control buttons ────────────────────────────────────────
+// â”€â”€ Remote control buttons â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function setupRemoteControl() {
+  setupPhoneNavigation();
+  setActivePhonePage(activePhonePage);
   const btnStart = document.getElementById('btn-start-pause');
   const btnReset = document.getElementById('btn-reset');
   const presetButtonsContainer = document.getElementById('remote-preset-buttons');
   const screenBtns = document.querySelectorAll('#remote-screen-buttons .screen-btn');
   const layoutBtns = document.querySelectorAll('#layout-controls .layout-btn');
+  const dashboardSizeBtns = document.querySelectorAll('.size-btn');
+  const dashboardPositionBtns = document.querySelectorAll('.position-btn');
   const exactMinuteInput = document.getElementById('exact-minute-input') as HTMLInputElement | null;
   const applyMinuteBtn = document.getElementById('apply-minute-btn');
   const customPresetsInput = document.getElementById('custom-presets-input') as HTMLInputElement | null;
@@ -935,13 +1104,47 @@ function setupRemoteControl() {
       sendToGlassesImmediate('manual');
     });
   });
+
+  dashboardSizeBtns.forEach((button) => {
+    button.addEventListener('click', () => {
+      if (!timerState || !bridge) return;
+      const value = (button as HTMLElement).dataset.size as TimerLayoutSettings['format'] | undefined;
+      if (!value) return;
+
+      committedLayoutSettings = {
+        ...committedLayoutSettings,
+        format: value,
+      };
+      persistCurrentLayoutSettings();
+      updateRemoteView();
+      sendToGlassesImmediate('manual');
+    });
+  });
+
+  dashboardPositionBtns.forEach((button) => {
+    button.addEventListener('click', () => {
+      if (!timerState || !bridge) return;
+      const vertical = (button as HTMLElement).dataset.vertical as TimerLayoutSettings['vertical'] | undefined;
+      const horizontal = (button as HTMLElement).dataset.horizontal as TimerLayoutSettings['horizontal'] | undefined;
+      if (!vertical || !horizontal) return;
+
+      committedLayoutSettings = {
+        ...committedLayoutSettings,
+        vertical,
+        horizontal,
+      };
+      persistCurrentLayoutSettings();
+      updateRemoteView();
+      sendToGlassesImmediate('manual');
+    });
+  });
 }
 
-// ── Swipe throttling ──────────────────────────────────────────────
+// â”€â”€ Swipe throttling â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let lastSwipeTime = 0;
 const SWIPE_COOLDOWN_MS = 300;
 
-// ── Event handlers for glasses ────────────────────────────────────
+// â”€â”€ Event handlers for glasses â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function syncPageVisibility(nextVisible: boolean): void {
   isPageVisible = nextVisible;
   pushDetailedLog('[PAGE]', `visibility visible=${isPageVisible}`);
@@ -1035,13 +1238,14 @@ function setupEventHandlers() {
       const listEventType = event?.listEvent?.eventType;
       const textEventType = event?.textEvent?.eventType;
       const sysEventType = event?.sysEvent?.eventType;
-      const interactionEventType = textEventType ?? listEventType;
-      const effectiveInteractionEventType = interactionEventType ?? getRecentRawInteractionEventType();
       const hasStructuredEvent = Boolean(event?.listEvent || event?.textEvent || event?.sysEvent || event?.audioEvent);
+      const interactionEventType = textEventType ?? listEventType;
+      const rawInteractionEventType = hasStructuredEvent ? null : getRecentRawInteractionEventType();
+      const effectiveInteractionEventType = interactionEventType ?? rawInteractionEventType;
       const interactionSource = resolveInteractionSource(event, hasStructuredEvent);
       pushDetailedLog(
         '[EVENT]',
-        `recv list=${String(listEventType)}:${String(event?.listEvent?.containerName)} text=${String(textEventType)}:${String(event?.textEvent?.containerName)} sys=${String(sysEventType)} source=${interactionSource} raw=${String(getRecentRawInteractionEventType())}`,
+        `recv list=${String(listEventType)}:${String(event?.listEvent?.containerName)} text=${String(textEventType)}:${String(event?.textEvent?.containerName)} sys=${String(sysEventType)} source=${interactionSource} raw=${String(rawInteractionEventType)}`,
       );
       console.log('Even Hub event:', event);
 
@@ -1066,7 +1270,7 @@ function setupEventHandlers() {
 
       if (effectiveInteractionEventType === null && !sysEventType) {
         // Either a bare event (no structured payload) or a structured event whose
-        // eventType is unrecognised / missing – treat both as a single tap from the
+        // eventType is unrecognised / missing â€“ treat both as a single tap from the
         // temple button, which is the only physical gesture that can produce such an
         // event on the G2.
         pushDetailedLog('[EVENT]', hasStructuredEvent ? 'structured event with unknown eventType -> singleTap' : 'bare event -> singleTap');
@@ -1307,7 +1511,7 @@ function handleSwipe(dir: 1 | -1, source: InteractionSource) {
   timerState.setPreset(dir === 1 ? presetMinutes[0] : presetMinutes[presetMinutes.length - 1]);
 }
 
-// ── Bootstrap ─────────────────────────────────────────────────────
+// â”€â”€ Bootstrap â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function attachTimerStateCallbacks(): void {
   if (!timerState) return;
 
@@ -1358,7 +1562,7 @@ async function init() {
       pushDetailedLog('[APP]', 'bridge unavailable');
       console.error('[Boot] Bridge not available');
       const s = document.getElementById('remote-status');
-      if (s) { s.textContent = 'Connection unavailable'; s.className = 'error'; }
+      if (s) { s.textContent = 'Connection unavailable'; s.className = 'status-pill error'; }
       committedPresetSettings = await loadTimerPresetSettings(null);
       pushDetailedLog('[PRESET]', `loaded local shortcuts=${activePresetMinutes().join('/')}`);
       timerState = new TimerStateManager();
@@ -1433,7 +1637,7 @@ async function init() {
         presetMinutes: activePresetMinutes(),
       });
       const s = document.getElementById('remote-status');
-      if (s) { s.textContent = 'Display creation error'; s.className = 'error'; }
+      if (s) { s.textContent = 'Display creation error'; s.className = 'status-pill error'; }
       return;
     }
 
@@ -1451,7 +1655,7 @@ async function init() {
     pushDetailedLog('[APP]', `init error ${String(err)}`);
     console.error('Failed to initialize:', err);
     const s = document.getElementById('remote-status');
-    if (s) { s.textContent = `Error: ${err}`; s.className = 'error'; }
+    if (s) { s.textContent = `Error: ${err}`; s.className = 'status-pill error'; }
   }
 }
 

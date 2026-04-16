@@ -4,380 +4,1104 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <link rel="icon" href="data:," />
-    <title>G2 Timer – Remote control</title>
+    <title>G2 Timer - Remote control</title>
     <style>
       :root {
-        --bg: #ffffff;
-        --bg-subtle: #f8f9fa;
-        --card: #ffffff;
-        --border: #e5e7eb;
-        --text: #1a1a1a;
-        --text-muted: #6b7280;
-        --accent: #1a1a1a;
-        --accent-inverse: #ffffff;
-        --success: #22c55e;
-        --danger: #ef4444;
-        --shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+        --bg: #f7f7f5;
+        --surface: rgba(255, 255, 255, 0.78);
+        --surface-solid: #ffffff;
+        --surface-strong: #111111;
+        --border: rgba(17, 17, 17, 0.09);
+        --border-strong: rgba(17, 17, 17, 0.14);
+        --text: #111111;
+        --text-soft: rgba(17, 17, 17, 0.6);
+        --text-faint: rgba(17, 17, 17, 0.38);
+        --accent: #111111;
+        --accent-soft: #ecebe7;
+        --success: #1f8f4c;
+        --danger: #b42318;
+        --shadow: 0 18px 50px rgba(17, 17, 17, 0.05);
       }
+
       * {
         box-sizing: border-box;
       }
+
       html {
         overflow-x: hidden;
-        overscroll-behavior-x: none;
+        background: var(--bg);
       }
+
       body {
         margin: 0;
-        padding: 5px 0;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-        background: var(--bg);
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at top left, rgba(17, 17, 17, 0.03), transparent 30%),
+          linear-gradient(180deg, #fbfbfa 0%, var(--bg) 100%);
         color: var(--text);
+        font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+        -webkit-font-smoothing: antialiased;
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      button,
+      input {
+        font: inherit;
+      }
+
+      button {
+        appearance: none;
+      }
+
+      .app-shell {
+        width: 100%;
+        max-width: 430px;
+        margin: 0 auto;
+        min-height: 100vh;
+        padding: 0 18px 122px;
+      }
+
+      .topbar {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 0 0 0;
+        height: 80px;
+        background: rgba(249, 249, 249, 0.72);
+        backdrop-filter: blur(20px);
+      }
+
+      .brand-mark {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .brand-icon {
+        width: 28px;
+        height: 28px;
+        border: 1px solid var(--border-strong);
+        border-radius: 8px;
+        display: grid;
+        place-items: center;
+        font-size: 12px;
+        letter-spacing: 0.16em;
+      }
+
+      .brand-copy {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+      }
+
+      .eyebrow,
+      .micro-label {
+        text-transform: uppercase;
+        letter-spacing: 0.16em;
+        font-size: 10px;
+        line-height: 1;
+        color: var(--text-faint);
+      }
+
+      .brand-copy strong {
+        font-size: 14px;
+        font-weight: 500;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .status-pill {
+        min-height: 34px;
+        padding: 0 12px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.72);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        font-size: 11px;
+        line-height: 1.2;
+        color: var(--text-soft);
+      }
+
+      .status-pill.connected {
+        color: var(--success);
+      }
+
+      .status-pill.error {
+        color: var(--danger);
+      }
+
+      main {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        padding-top: 48px;
+      }
+
+      .page {
+        display: none;
+        flex-direction: column;
+        gap: 20px;
+      }
+
+      .page.active {
+        display: flex;
+      }
+
+      .page[data-page="home"] {
+        padding-bottom: 168px;
+      }
+
+      .section {
+        padding: 18px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--surface);
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(18px);
+      }
+
+      .hero {
+        padding: 0;
+        overflow: hidden;
+        background: transparent;
+        border: 0;
+        box-shadow: none;
+        backdrop-filter: none;
+      }
+
+      .dashboard-header {
+        text-align: center;
+        margin-bottom: 10px;
+      }
+
+      .dashboard-header h1 {
+        margin: 0;
+        font-size: 10px;
+        line-height: 1;
+        font-weight: 400;
+        text-transform: uppercase;
+        letter-spacing: 0.3em;
+        color: var(--text-soft);
+      }
+
+      .hero-title p,
+      .section-copy,
+      .helper-text,
+      .meta-row,
+      .telemetry-log {
+        color: var(--text-soft);
+      }
+
+      .hero-title p,
+      .section-copy {
+        margin: 0;
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .hero-visual {
+        position: relative;
+        aspect-ratio: 16 / 9;
+        border-radius: 8px;
+        border: 1px solid rgba(17, 17, 17, 0.04);
+        background: #f3f3f4;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+      }
+
+      .hud-frame {
+        width: 80%;
+        height: 60%;
+        border: 1px solid rgba(17, 17, 17, 0.16);
+        position: relative;
+      }
+
+      .hero-visual .ghost-border {
+        position: absolute;
+        inset: 16px;
+        border: 1px solid rgba(17, 17, 17, 0.06);
+        border-radius: 8px;
+        pointer-events: none;
+      }
+
+      .hud-frame::before,
+      .hud-frame::after,
+      .hud-frame .corner-bottom-left,
+      .hud-frame .corner-bottom-right {
+        content: "";
+        position: absolute;
+        width: 10px;
+        height: 10px;
+        border-color: rgba(17, 17, 17, 0.35);
+      }
+
+      .hud-frame::before {
+        top: 12px;
+        left: 12px;
+        border-top: 1px solid;
+        border-left: 1px solid;
+      }
+
+      .hud-frame::after {
+        top: 12px;
+        right: 12px;
+        border-top: 1px solid;
+        border-right: 1px solid;
+      }
+
+      .hud-frame .corner-bottom-left {
+        bottom: 12px;
+        left: 12px;
+        border-bottom: 1px solid;
+        border-left: 1px solid;
+      }
+
+      .hud-frame .corner-bottom-right {
+        bottom: 12px;
+        right: 12px;
+        border-bottom: 1px solid;
+        border-right: 1px solid;
+      }
+
+      .preview-timer {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
         display: flex;
         flex-direction: column;
         align-items: center;
-        min-height: 100vh;
-        overflow-x: hidden;
-        overscroll-behavior-x: none;
-        -webkit-tap-highlight-color: transparent;
+        gap: 6px;
       }
-      .header {
-        width: 100%;
-        max-width: 360px;
-        padding: 0 16px;
-        margin-bottom: 20px;
+
+      .preview-timer.size-compact .preview-time {
+        font-size: 30px;
       }
-      .header h1 {
-        font-size: 1.25rem;
-        font-weight: 600;
-        color: var(--text);
-        margin: 0;
-        letter-spacing: -0.02em;
+
+      .preview-timer.size-large .preview-time {
+        font-size: 42px;
       }
-      #remote-container {
-        width: 100%;
-        max-width: 360px;
-        padding: 0 16px;
+
+      .preview-timer.pos-top-left {
+        left: 28%;
+        top: 24%;
+      }
+
+      .preview-timer.pos-top-right {
+        left: 72%;
+        top: 24%;
+      }
+
+      .preview-timer.pos-bottom-left {
+        left: 28%;
+        top: auto;
+        bottom: 12%;
+        transform: translateX(-50%);
+      }
+
+      .preview-timer.pos-bottom-right {
+        left: 72%;
+        top: auto;
+        bottom: 12%;
+        transform: translateX(-50%);
+      }
+
+      .preview-timer.size-compact.pos-bottom-left,
+      .preview-timer.size-compact.pos-bottom-right {
+        bottom: 16%;
+      }
+
+      .preview-time {
+        font-size: 42px;
+        line-height: 1;
+        font-weight: 200;
+        letter-spacing: -0.06em;
+        opacity: 0.22;
+        transform: perspective(1000px) rotateX(10deg);
+      }
+
+      .preview-caption {
+        display: none;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        font-size: 8px;
+        color: rgba(17, 17, 17, 0.16);
+      }
+
+      .hero-meta {
+        position: absolute;
+        left: 24px;
+        bottom: 16px;
         display: flex;
         flex-direction: column;
-        gap: 16px;
+        gap: 4px;
       }
-      .card {
-        background: var(--card);
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        padding: 16px;
-        box-shadow: var(--shadow);
-      }
-      .card label {
-        display: block;
-        font-size: 0.8rem;
-        font-weight: 500;
-        color: var(--text-muted);
-        margin-bottom: 10px;
+
+      .meta-row {
+        font-size: 10px;
         text-transform: uppercase;
-        letter-spacing: 0.04em;
+        letter-spacing: 0.05em;
+        color: rgba(17, 17, 17, 0.36);
       }
-      #remote-preset-section label {
-        margin-bottom: 10px;
-      }
-      #remote-preset-buttons,
-      #remote-screen-buttons,
-      .layout-row {
+
+      .section-header {
         display: flex;
-        flex-wrap: wrap;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 14px;
+      }
+
+      .section-header h2 {
+        margin: 6px 0 0;
+        font-size: 20px;
+        line-height: 1;
+        font-weight: 300;
+        letter-spacing: -0.04em;
+      }
+
+      .button-grid,
+      .screen-grid,
+      .option-grid,
+      .action-grid {
+        display: grid;
         gap: 8px;
       }
-      .preset-tools {
-        margin-top: 12px;
+
+      .button-grid {
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        gap: 0;
+        align-items: end;
+      }
+
+      .screen-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .option-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .option-grid.six {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .button-grid button,
+      .screen-btn,
+      .layout-btn,
+      .inline-btn,
+      .action-btn {
+        min-height: 52px;
+        padding: 12px 10px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.82);
+        color: var(--text-soft);
+        font-size: 14px;
+        font-weight: 400;
+        transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease, transform 0.08s ease;
+      }
+
+      .button-grid button:active,
+      .screen-btn:active,
+      .layout-btn:active,
+      .inline-btn:active,
+      .action-btn:active {
+        transform: scale(0.985);
+      }
+
+      .button-grid button.selected,
+      .screen-btn.selected,
+      .layout-btn.selected {
+        color: var(--text);
+        border-color: var(--accent);
+        background: #f0efeb;
+      }
+
+      .quick-presets {
         display: flex;
         flex-direction: column;
+        gap: 18px;
+      }
+
+      .quick-presets .button-grid button {
+        min-height: auto;
+        padding: 0 4px 10px;
+        border: 0;
+        border-bottom: 1px solid transparent;
+        border-radius: 0;
+        background: transparent;
+        color: var(--text-soft);
+        font-size: 28px;
+        font-weight: 300;
+        line-height: 1;
+        letter-spacing: -0.04em;
+      }
+
+      .quick-presets .button-grid button.selected {
+        font-size: 32px;
+        font-weight: 500;
+        color: var(--text);
+        background: transparent;
+        border-color: var(--text);
+      }
+
+      .quick-presets .button-grid button:disabled {
+        opacity: 0.4;
+      }
+
+      .minutes-label {
+        text-align: center;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        font-size: 10px;
+        color: rgba(17, 17, 17, 0.45);
+      }
+
+      .display-bento {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1px;
+        background: rgba(17, 17, 17, 0.08);
+      }
+
+      .display-cell {
+        background: #f7f7f5;
+        padding: 28px 18px;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+      }
+
+      .display-cell-title {
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        font-size: 10px;
+        color: var(--text-soft);
+      }
+
+      .size-toggle {
+        display: flex;
+        align-items: center;
+        gap: 24px;
+      }
+
+      .size-btn {
+        border: 0;
+        background: transparent;
+        min-width: 34px;
+        min-height: 34px;
+        padding: 2px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        color: rgba(17, 17, 17, 0.36);
+      }
+
+      .size-btn-dot {
+        border-radius: 999px;
+        background: rgba(17, 17, 17, 0.18);
+      }
+
+      .size-btn[data-size="compact"] .size-btn-dot {
+        width: 6px;
+        height: 6px;
+      }
+
+      .size-btn[data-size="large"] .size-btn-dot {
+        width: 10px;
+        height: 10px;
+      }
+
+      .size-btn.active .size-btn-dot {
+        background: #111111;
+      }
+
+      .size-btn span,
+      .position-label {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        color: rgba(17, 17, 17, 0.36);
+      }
+
+      .size-btn.active span {
+        color: #111111;
+        font-weight: 600;
+      }
+
+      .position-wrap {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        align-items: center;
+        gap: 16px;
+      }
+
+      .position-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 28px);
         gap: 10px;
       }
+
+      .position-btn {
+        width: 28px;
+        height: 18px;
+        border: 1px solid rgba(17, 17, 17, 0.18);
+        background: transparent;
+        padding: 0;
+        border-radius: 2px;
+      }
+
+      .position-btn.active {
+        border-width: 2px;
+        border-color: #111111;
+        background: rgba(17, 17, 17, 0.04);
+      }
+
+      .main-action {
+        position: fixed;
+        left: 50%;
+        bottom: 104px;
+        transform: translateX(-50%);
+        width: auto;
+        z-index: 25;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+      }
+
+      .main-action .action-btn,
+      .secondary-reset {
+        width: 64px;
+        height: 64px;
+        min-height: 64px;
+        border-radius: 999px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0;
+        text-transform: uppercase;
+        letter-spacing: 0;
+        font-size: 11px;
+        font-weight: 400;
+        backdrop-filter: blur(18px);
+        padding: 0;
+      }
+
+      .main-action .action-btn {
+        background: #121212;
+        color: #ffffff;
+        border: 1px solid #121212;
+      }
+
+      .main-action .action-btn.pause-mode {
+        background: rgba(255, 255, 255, 0.82);
+        color: var(--text);
+        border-color: var(--border-strong);
+      }
+
+      .secondary-reset {
+        background: rgba(255, 255, 255, 0.82);
+        color: var(--text-soft);
+        border: 1px solid rgba(17, 17, 17, 0.08);
+      }
+
+      .action-icon {
+        width: 20px;
+        height: 20px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .action-label {
+        display: none;
+      }
+
+      .action-icon svg {
+        width: 20px;
+        height: 20px;
+        display: block;
+        fill: currentColor;
+        stroke: currentColor;
+      }
+
+      .button-grid button:disabled,
+      .screen-btn:disabled,
+      .layout-btn:disabled,
+      .inline-btn:disabled,
+      .action-btn:disabled,
+      input:disabled {
+        opacity: 0.45;
+      }
+
+      .section-stack {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+
       .field-row {
         display: flex;
         gap: 8px;
       }
-      .preset-input {
+
+      .field-row input {
         flex: 1;
         min-width: 0;
-        padding: 12px 12px;
-        font-size: 0.95rem;
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        background: var(--card);
-        color: var(--text);
-      }
-      .preset-input:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-      }
-      .inline-btn {
-        flex: 0 0 auto;
-        padding: 12px 14px;
-        font-size: 0.9rem;
-        font-weight: 600;
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        background: var(--card);
-        color: var(--text);
-        cursor: pointer;
-      }
-      .inline-btn:hover:not(:disabled),
-      .inline-btn:active:not(:disabled) {
-        background: var(--bg-subtle);
-        border-color: var(--text-muted);
-      }
-      .inline-btn:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-      }
-      .helper-text {
-        margin: -2px 2px 0;
-        font-size: 0.75rem;
-        line-height: 1.35;
-        color: var(--text-muted);
-      }
-      .preset-btn,
-      .screen-btn,
-      .layout-btn {
-        flex: 1 1 calc(25% - 6px);
-        min-width: 52px;
-        padding: 12px 8px;
-        font-size: 0.95rem;
-        font-weight: 600;
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        background: var(--card);
-        color: var(--text);
-        cursor: pointer;
-        transition: background 0.15s, border-color 0.15s, color 0.15s;
-      }
-      .screen-btn,
-      .layout-btn {
-        flex: 1 1 0;
-        min-width: 84px;
-      }
-      .preset-btn:hover:not(:disabled), .preset-btn:active:not(:disabled),
-      .screen-btn:hover:not(:disabled), .screen-btn:active:not(:disabled),
-      .layout-btn:hover:not(:disabled), .layout-btn:active:not(:disabled) {
-        background: var(--bg-subtle);
-        border-color: var(--text-muted);
-      }
-      .preset-btn.selected,
-      .screen-btn.selected,
-      .layout-btn.selected {
-        background: var(--accent);
-        border-color: var(--accent);
-        color: var(--accent-inverse);
-      }
-      .preset-btn.selected:hover:not(:disabled), .preset-btn.selected:active:not(:disabled),
-      .screen-btn.selected:hover:not(:disabled), .screen-btn.selected:active:not(:disabled),
-      .layout-btn.selected:hover:not(:disabled), .layout-btn.selected:active:not(:disabled) {
-        background: var(--accent);
-        border-color: var(--accent);
-        color: var(--accent-inverse);
-        opacity: 0.9;
-      }
-      .preset-btn:disabled,
-      .screen-btn:disabled,
-      .layout-btn:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-      }
-      #glasses-view-summary {
-        font-size: 0.92rem;
-        line-height: 1.4;
-        color: var(--text);
-        margin-bottom: 12px;
-      }
-      .layout-group + .layout-group {
-        margin-top: 12px;
-      }
-      .layout-group span {
-        display: block;
-        font-size: 0.75rem;
-        font-weight: 600;
-        color: var(--text-muted);
-        margin-bottom: 8px;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-      }
-      .action-row {
-        display: flex;
-        gap: 10px;
-      }
-      .action-row button {
-        flex: 1;
-        padding: 14px 16px;
-        font-size: 0.95rem;
-        font-weight: 600;
-        border-radius: 10px;
-        cursor: pointer;
-        transition: opacity 0.15s, transform 0.05s;
-      }
-      .action-row button:active:not(:disabled) {
-        transform: scale(0.98);
-      }
-      .action-row button:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-        transform: none;
-      }
-      #btn-start-pause {
-        background: var(--accent);
-        color: var(--accent-inverse);
-        border: 1px solid var(--accent);
-      }
-      #btn-start-pause:hover:not(:disabled) {
-        opacity: 0.9;
-      }
-      #btn-start-pause.pause-mode {
-        background: var(--card);
-        color: var(--text);
-        border: 1px solid var(--border);
-      }
-      #btn-start-pause.pause-mode:hover:not(:disabled) {
-        background: var(--bg-subtle);
-      }
-      #btn-reset {
-        background: var(--card);
-        color: var(--text);
-        border: 1px solid var(--border);
-      }
-      #btn-reset:hover:not(:disabled) {
-        background: var(--bg-subtle);
-        border-color: var(--text-muted);
-      }
-      #remote-status {
-        font-size: 0.75rem;
-        color: var(--text-muted);
-        text-align: center;
-        padding-top: 12px;
-        margin-top: 4px;
-        border-top: 1px solid var(--border);
-      }
-      #remote-status.connected {
-        color: var(--success);
-      }
-      #remote-status.error {
-        color: var(--danger);
-      }
-      #telemetry-card label {
-        font-size: 0.72rem;
-        font-weight: 600;
-        margin-bottom: 8px;
-      }
-      #telemetry-summary {
-        font-size: 0.78rem;
-        color: var(--text-muted);
-        line-height: 1.45;
-        min-height: 84px;
-      }
-      #telemetry-log {
-        margin-top: 10px;
-        padding: 10px;
+        height: 52px;
         border: 1px solid var(--border);
         border-radius: 8px;
-        background: var(--bg-subtle);
+        background: rgba(255, 255, 255, 0.78);
+        padding: 0 14px;
         color: var(--text);
-        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-        font-size: 0.68rem;
-        line-height: 1.4;
-        max-height: 220px;
-        overflow-y: auto;
+      }
+
+      .layout-group + .layout-group {
+        padding-top: 14px;
+        border-top: 1px solid var(--border);
+      }
+
+      .layout-group span {
+        display: block;
+        margin-bottom: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
+        font-size: 10px;
+        color: var(--text-faint);
+      }
+
+      .action-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .glasses-summary {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding: 14px 0 0;
+        border-top: 1px solid var(--border);
+      }
+
+      .glasses-summary strong {
+        font-size: 20px;
+        font-weight: 300;
+        letter-spacing: -0.04em;
+      }
+
+      .telemetry-card {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      #telemetry-summary {
+        font-size: 12px;
+        line-height: 1.5;
+        color: var(--text-soft);
         white-space: pre-wrap;
+      }
+
+      #telemetry-log {
+        margin: 0;
+        padding: 14px;
+        min-height: 140px;
+        max-height: 240px;
+        overflow: auto;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: #f1f0ec;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 11px;
+        line-height: 1.45;
+        white-space: pre-wrap;
+      }
+
+      .bottom-nav {
+        position: fixed;
+        left: 50%;
+        bottom: 18px;
+        transform: translateX(-50%);
+        width: calc(100% - 24px);
+        max-width: 406px;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+        padding: 10px;
+        border: 1px solid var(--border);
+        border-radius: 24px;
+        background: rgba(255, 255, 255, 0.82);
+        backdrop-filter: blur(18px);
+        box-shadow: 0 -14px 30px rgba(17, 17, 17, 0.06);
+      }
+
+      .nav-tab {
+        min-height: 58px;
+        width: 100%;
+        border: 0;
+        border-radius: 16px;
+        background: transparent;
+        color: var(--text-faint);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        text-align: center;
+        font-size: 10px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        padding: 6px 0;
+      }
+
+      .nav-tab .nav-icon {
+        width: 18px;
+        height: 18px;
+        display: block;
+        color: currentColor;
+        margin: 0 auto;
+      }
+
+      .nav-tab .nav-icon svg {
+        width: 18px;
+        height: 18px;
+        display: block;
+        stroke: currentColor;
+      }
+
+      .nav-tab span:last-child {
+        display: block;
+        width: 100%;
+        text-align: center;
+        line-height: 1.1;
+      }
+
+      .dashboard-utility {
+        display: flex;
+        justify-content: flex-end;
+        margin-top: -6px;
+      }
+
+      .edit-link {
+        border: 0;
+        background: transparent;
+        padding: 0;
+        font-size: 11px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: rgba(17, 17, 17, 0.46);
+      }
+
+      .settings-stack {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+      }
+
+      .nav-tab.active {
+        background: #f1f0ec;
+        color: var(--text);
+      }
+
+      @media (max-width: 360px) {
+        .app-shell {
+          padding-left: 14px;
+          padding-right: 14px;
+          padding-bottom: 126px;
+        }
+
+        .hero-title h1 {
+          font-size: 28px;
+        }
+
+        .preview-time {
+          font-size: 40px;
+        }
+
+        .main-action {
+          bottom: 104px;
+        }
+      }
+
+      @media (max-width: 480px) {
+        .preview-timer.pos-bottom-left {
+          left: 30%;
+          bottom: 14%;
+        }
+
+        .preview-timer.pos-bottom-right {
+          left: 70%;
+          bottom: 14%;
+        }
+
+        .preview-timer.size-compact.pos-bottom-left {
+          left: 31%;
+          bottom: 18%;
+        }
+
+        .preview-timer.size-compact.pos-bottom-right {
+          left: 69%;
+          bottom: 18%;
+        }
       }
     </style>
   </head>
   <body>
-    <div class="header">
-      <h1>G2 Timer</h1>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand-mark">
+          <div class="brand-icon">G2</div>
+          <div class="brand-copy">
+            <strong>Minimal timer</strong>
+          </div>
+        </div>
+        <div id="remote-status" class="status-pill">Connecting...</div>
+      </header>
+
+      <main>
+        <section class="page active" data-page="home">
+          <div class="section hero">
+            <header class="dashboard-header">
+              <h1>Timer</h1>
+            </header>
+            <div class="hero-visual">
+              <div class="ghost-border"></div>
+              <div class="hud-frame">
+                <span class="corner-bottom-left" aria-hidden="true"></span>
+                <span class="corner-bottom-right" aria-hidden="true"></span>
+                <div id="phone-preview-timer" class="preview-timer size-large pos-top-right">
+                  <strong id="phone-preview-time" class="preview-time">05:00</strong>
+                  <span id="phone-preview-caption" class="preview-caption">G2 Projection Alpha</span>
+                </div>
+              </div>
+              <div class="hero-meta">
+                <span class="meta-row">Fov: 42°</span>
+                <span class="meta-row" id="phone-panel-label">Pos: Top_R</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="quick-presets">
+            <div id="remote-preset-buttons" class="button-grid">
+              <button type="button" class="preset-btn" data-preset="1">1</button>
+              <button type="button" class="preset-btn" data-preset="3">3</button>
+              <button type="button" class="preset-btn" data-preset="5">5</button>
+              <button type="button" class="preset-btn" data-preset="10">10</button>
+              <button type="button" class="preset-btn" data-preset="15">15</button>
+              <button type="button" class="preset-btn" data-preset="30">30</button>
+              <button type="button" class="preset-btn" data-preset="60" style="display:none;">60</button>
+            </div>
+            <div class="minutes-label">Minutes</div>
+          </div>
+
+          <div class="dashboard-utility">
+            <button type="button" id="dashboard-edit-custom" class="edit-link">Edit</button>
+          </div>
+
+          <div class="display-bento">
+            <div class="display-cell">
+              <span class="display-cell-title">Display Size</span>
+              <div class="size-toggle">
+                <button type="button" class="size-btn" data-size="compact" aria-label="Small display size">
+                  <div class="size-btn-dot"></div>
+                  <span>S</span>
+                </button>
+                <button type="button" class="size-btn active" data-size="large" aria-label="Large display size">
+                  <div class="size-btn-dot"></div>
+                  <span>L</span>
+                </button>
+              </div>
+              <span class="meta-row" id="phone-layout-meta">Size: Large</span>
+            </div>
+            <div class="display-cell">
+              <span class="display-cell-title">Position</span>
+              <div class="position-wrap">
+                <div class="position-grid">
+                  <button type="button" class="position-btn" data-vertical="top" data-horizontal="left" aria-label="Top left position"></button>
+                  <button type="button" class="position-btn active" data-vertical="top" data-horizontal="right" aria-label="Top right position"></button>
+                  <button type="button" class="position-btn" data-vertical="bottom" data-horizontal="left" aria-label="Bottom left position"></button>
+                  <button type="button" class="position-btn" data-vertical="bottom" data-horizontal="right" aria-label="Bottom right position"></button>
+                </div>
+                <span class="position-label" id="hero-subtitle">Top Right</span>
+              </div>
+              <span class="meta-row" id="phone-shortcuts-meta">Shortcuts: 1, 3, 5, 10, 15, 30, 60</span>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="field-row">
+              <input id="exact-minute-input" type="number" min="1" max="999" inputmode="numeric" placeholder="Exact minutes" />
+              <button type="button" id="apply-minute-btn" class="inline-btn">Apply</button>
+            </div>
+          </div>
+
+          <div class="main-action">
+            <button type="button" id="btn-start-pause" class="action-btn" disabled>
+              <span id="btn-start-icon" class="action-icon" aria-hidden="true">
+                <svg id="btn-start-icon-play" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round">
+                  <path d="M9 7.5 17 12l-8 4.5z" fill="currentColor" stroke="none"></path>
+                </svg>
+              </span>
+              <span id="btn-start-label" class="action-label">Play</span>
+            </button>
+            <button type="button" id="btn-reset" class="secondary-reset" disabled>
+              <span class="action-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round">
+                  <rect x="8" y="8" width="8" height="8" rx="1.5" fill="currentColor" stroke="none"></rect>
+                </svg>
+              </span>
+              <span class="action-label">Stop</span>
+            </button>
+          </div>
+        </section>
+
+        <section class="page" data-page="settings">
+          <div class="settings-stack">
+            <div class="section">
+              <div class="section-header">
+                <div>
+                  <span class="eyebrow">Settings</span>
+                  <h2>Timer layout</h2>
+                </div>
+              </div>
+              <div id="layout-controls" class="section-stack">
+                <div class="layout-group">
+                  <span>Size</span>
+                  <div class="option-grid">
+                    <button type="button" class="layout-btn" data-field="format" data-value="large">Large</button>
+                    <button type="button" class="layout-btn" data-field="format" data-value="compact">Small</button>
+                  </div>
+                </div>
+                <div class="layout-group">
+                  <span>Vertical</span>
+                  <div class="option-grid">
+                    <button type="button" class="layout-btn" data-field="vertical" data-value="top">Top</button>
+                    <button type="button" class="layout-btn" data-field="vertical" data-value="center">Center</button>
+                    <button type="button" class="layout-btn" data-field="vertical" data-value="bottom">Bottom</button>
+                  </div>
+                </div>
+                <div class="layout-group">
+                  <span>Horizontal</span>
+                  <div class="option-grid">
+                    <button type="button" class="layout-btn" data-field="horizontal" data-value="left">Left</button>
+                    <button type="button" class="layout-btn" data-field="horizontal" data-value="center">Center</button>
+                    <button type="button" class="layout-btn" data-field="horizontal" data-value="right">Right</button>
+                  </div>
+                </div>
+                <div class="layout-group">
+                  <span>Blink</span>
+                  <div class="option-grid six">
+                    <button type="button" class="layout-btn" data-field="doneBlinkCount" data-value="0">Infinite</button>
+                    <button type="button" class="layout-btn" data-field="doneBlinkCount" data-value="1">1x</button>
+                    <button type="button" class="layout-btn" data-field="doneBlinkCount" data-value="2">2x</button>
+                    <button type="button" class="layout-btn" data-field="doneBlinkCount" data-value="3">3x</button>
+                    <button type="button" class="layout-btn" data-field="doneBlinkCount" data-value="5">5x</button>
+                    <button type="button" class="layout-btn" data-field="doneBlinkCount" data-value="10">10x</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="section" id="custom-set-section">
+              <div class="section-header">
+                <div>
+                  <span class="eyebrow">Settings</span>
+                  <h2>Custom set</h2>
+                </div>
+              </div>
+              <div class="section-stack">
+                <div class="field-row">
+                  <input id="custom-presets-input" type="text" placeholder="2, 5, 10, 15" />
+                  <button type="button" id="save-custom-presets" class="inline-btn">Save</button>
+                </div>
+                <p class="helper-text">Comma-separated presets, up to 8 values.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="page" data-page="advanced">
+          <div class="section">
+            <div class="section-header">
+              <div>
+                <span class="eyebrow">Advanced</span>
+                <h2>Glasses view</h2>
+              </div>
+            </div>
+            <p id="glasses-view-summary" class="section-copy">Connecting...</p>
+            <div id="remote-screen-buttons" class="screen-grid">
+              <button type="button" class="screen-btn" data-screen="home">Menu</button>
+              <button type="button" class="screen-btn" data-screen="timer">Timer</button>
+              <button type="button" class="screen-btn" data-screen="settings">Settings</button>
+            </div>
+            <div class="glasses-summary">
+              <span class="micro-label">Gesture map</span>
+              <strong id="phone-gesture-title">Ready when connected</strong>
+              <p id="remote-gesture-help" class="section-copy">Glasses controls load after connection.</p>
+            </div>
+          </div>
+
+          <div class="section telemetry-card">
+            <div class="section-header">
+              <div>
+                <span class="eyebrow">Advanced</span>
+                <h2>Phone telemetry</h2>
+              </div>
+            </div>
+            <div id="telemetry-summary">Waiting for samples...</div>
+            <pre id="telemetry-log">No render samples yet.</pre>
+          </div>
+        </section>
+      </main>
     </div>
-    <div id="remote-container">
-      <div class="card" id="display-state-card">
-        <label>Glasses screen</label>
-        <div id="glasses-view-summary">Connecting...</div>
-        <div id="remote-screen-buttons">
-          <button type="button" class="screen-btn" data-screen="home">Menu</button>
-          <button type="button" class="screen-btn" data-screen="timer">Timer</button>
-          <button type="button" class="screen-btn" data-screen="settings">Settings</button>
-        </div>
-        <div id="remote-gesture-help" class="helper-text">Glasses controls load after connection.</div>
-      </div>
-      <div class="card" id="remote-preset-section">
-        <label>Duration (minutes)</label>
-        <div id="remote-preset-buttons">
-          <button type="button" class="preset-btn" data-preset="1">1</button>
-          <button type="button" class="preset-btn" data-preset="3">3</button>
-          <button type="button" class="preset-btn" data-preset="5">5</button>
-          <button type="button" class="preset-btn" data-preset="10">10</button>
-          <button type="button" class="preset-btn" data-preset="15">15</button>
-          <button type="button" class="preset-btn" data-preset="30">30</button>
-          <button type="button" class="preset-btn" data-preset="60">60</button>
-        </div>
-        <div class="preset-tools">
-          <div class="field-row">
-            <input id="exact-minute-input" class="preset-input" type="number" min="1" max="999" inputmode="numeric" placeholder="Exact minutes" />
-            <button type="button" id="apply-minute-btn" class="inline-btn">Apply</button>
-          </div>
-          <div class="helper-text">Pick any duration from 1 to 999 minutes.</div>
-          <div class="field-row">
-            <input id="custom-presets-input" class="preset-input" type="text" placeholder="2, 5, 10, 15" />
-            <button type="button" id="save-custom-presets" class="inline-btn">Save</button>
-          </div>
-          <div class="helper-text">Comma-separated shortcuts shown in the buttons above, up to 8 values.</div>
-        </div>
-      </div>
-      <div class="card" id="layout-controls">
-        <label>Timer display</label>
-        <div class="layout-group">
-          <span>Size</span>
-          <div class="layout-row">
-            <button type="button" class="layout-btn" data-field="format" data-value="large">Large</button>
-            <button type="button" class="layout-btn" data-field="format" data-value="compact">Small</button>
-          </div>
-        </div>
-        <div class="layout-group">
-          <span>Vertical</span>
-          <div class="layout-row">
-            <button type="button" class="layout-btn" data-field="vertical" data-value="top">Top</button>
-            <button type="button" class="layout-btn" data-field="vertical" data-value="center">Center</button>
-            <button type="button" class="layout-btn" data-field="vertical" data-value="bottom">Bottom</button>
-          </div>
-        </div>
-        <div class="layout-group">
-          <span>Horizontal</span>
-          <div class="layout-row">
-            <button type="button" class="layout-btn" data-field="horizontal" data-value="left">Left</button>
-            <button type="button" class="layout-btn" data-field="horizontal" data-value="center">Center</button>
-            <button type="button" class="layout-btn" data-field="horizontal" data-value="right">Right</button>
-          </div>
-        </div>
-        <div class="layout-group">
-          <span>Blink</span>
-          <div class="layout-row">
-            <button type="button" class="layout-btn" data-field="doneBlinkCount" data-value="0">Infinite</button>
-            <button type="button" class="layout-btn" data-field="doneBlinkCount" data-value="1">1x</button>
-            <button type="button" class="layout-btn" data-field="doneBlinkCount" data-value="2">2x</button>
-            <button type="button" class="layout-btn" data-field="doneBlinkCount" data-value="3">3x</button>
-            <button type="button" class="layout-btn" data-field="doneBlinkCount" data-value="5">5x</button>
-            <button type="button" class="layout-btn" data-field="doneBlinkCount" data-value="10">10x</button>
-          </div>
-        </div>
-      </div>
-      <div class="card" id="remote-actions">
-        <div class="action-row">
-          <button type="button" id="btn-start-pause" disabled>Start</button>
-          <button type="button" id="btn-reset" disabled>Cancel / Reset</button>
-        </div>
-      </div>
-      <div class="card" id="telemetry-card">
-        <label>Telemetry (phone)</label>
-        <div id="telemetry-summary">Waiting for samples...</div>
-        <div id="telemetry-log">No render samples yet.</div>
-      </div>
-      <p id="remote-status">Connecting...</p>
-    </div>
+
+    <nav class="bottom-nav" aria-label="Sections">
+      <button type="button" class="nav-tab active" data-page-target="home">
+        <span class="nav-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 10.5 12 3l9 7.5"></path>
+            <path d="M5.5 9.5V20h13V9.5"></path>
+          </svg>
+        </span>
+        <span>Home</span>
+      </button>
+      <button type="button" class="nav-tab" data-page-target="settings">
+        <span class="nav-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M4 7h10"></path>
+            <path d="M4 17h16"></path>
+            <circle cx="17" cy="7" r="3"></circle>
+            <circle cx="9" cy="17" r="3"></circle>
+          </svg>
+        </span>
+        <span>Settings</span>
+      </button>
+      <button type="button" class="nav-tab" data-page-target="advanced">
+        <span class="nav-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 4v6"></path>
+            <path d="M12 14v6"></path>
+            <path d="M4 12h6"></path>
+            <path d="M14 12h6"></path>
+            <circle cx="12" cy="12" r="2.5"></circle>
+          </svg>
+        </span>
+        <span>Avanzate</span>
+      </button>
+    </nav>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
