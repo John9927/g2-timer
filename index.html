@@ -148,14 +148,11 @@
         display: none;
         flex-direction: column;
         gap: 20px;
+        padding-bottom: 168px;
       }
 
       .page.active {
         display: flex;
-      }
-
-      .page[data-page="home"] {
-        padding-bottom: 168px;
       }
 
       .section {
@@ -1029,24 +1026,6 @@
             </div>
           </div>
 
-          <div class="main-action">
-            <button type="button" id="btn-start-pause" class="action-btn" disabled>
-              <span id="btn-start-icon" class="action-icon" aria-hidden="true">
-                <svg id="btn-start-icon-play" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round">
-                  <path d="M9 7.5 17 12l-8 4.5z" fill="currentColor" stroke="none"></path>
-                </svg>
-              </span>
-              <span id="btn-start-label" class="action-label">Play</span>
-            </button>
-            <button type="button" id="btn-reset" class="secondary-reset" disabled>
-              <span class="action-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round">
-                  <rect x="8" y="8" width="8" height="8" rx="1.5" fill="currentColor" stroke="none"></rect>
-                </svg>
-              </span>
-              <span class="action-label">Stop</span>
-            </button>
-          </div>
         </section>
 
         <section class="page" data-page="settings">
@@ -1147,6 +1126,25 @@
           </div>
         </section>
       </main>
+
+      <div class="main-action">
+        <button type="button" id="btn-start-pause" class="action-btn" disabled>
+          <span id="btn-start-icon" class="action-icon" aria-hidden="true">
+            <svg id="btn-start-icon-play" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round">
+              <path d="M9 7.5 17 12l-8 4.5z" fill="currentColor" stroke="none"></path>
+            </svg>
+          </span>
+          <span id="btn-start-label" class="action-label">Play</span>
+        </button>
+        <button type="button" id="btn-reset" class="secondary-reset" disabled>
+          <span class="action-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round">
+              <rect x="8" y="8" width="8" height="8" rx="1.5" fill="currentColor" stroke="none"></rect>
+            </svg>
+          </span>
+          <span class="action-label">Stop</span>
+        </button>
+      </div>
     </div>
 
     <nav class="bottom-nav" aria-label="Sections">

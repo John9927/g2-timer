@@ -566,9 +566,15 @@ function getRemoteGestureHelp(): string {
 
   const state = timerState.getState();
   if (state === TimerState.RUNNING) {
+    if (glassesPanel === 'home') {
+      return 'On glasses: swipe chooses Timer or Layout, tap opens the selected screen, double tap returns to the dashboard.';
+    }
+    if (glassesPanel === 'settings') {
+      return 'On glasses: tap changes the selected setting, swipe moves between fields, double tap returns to the dashboard.';
+    }
     return runningActionPromptVisible
-      ? 'On glasses: tap pauses the timer, double tap stops it.'
-      : 'On glasses: tap opens pause or stop actions. Double tap on Timer pauses or resumes. Ring taps stay locked while the timer is active.';
+      ? 'On glasses: tap pauses the timer, double tap returns to the dashboard.'
+      : 'On glasses: tap opens pause actions. Double tap returns to the dashboard. Ring taps stay locked while the timer is active.';
   }
 
   if (state === TimerState.PAUSED) {
@@ -632,7 +638,15 @@ function getGestureTitle(): string {
   return 'Home navigation';
 }
 
-function setActivePhonePage(nextPage: typeof activePhonePage): void {
+function scrollPhoneViewportToTop(behavior: ScrollBehavior = 'smooth'): void {
+  window.scrollTo({ top: 0, behavior });
+}
+
+function setActivePhonePage(
+  nextPage: typeof activePhonePage,
+  options: { scrollToTop?: boolean; scrollBehavior?: ScrollBehavior } = {},
+): void {
+  const { scrollToTop = false, scrollBehavior = 'smooth' } = options;
   activePhonePage = nextPage;
   document.querySelectorAll<HTMLElement>('.page').forEach((page) => {
     page.classList.toggle('active', page.dataset.page === nextPage);
@@ -640,6 +654,9 @@ function setActivePhonePage(nextPage: typeof activePhonePage): void {
   document.querySelectorAll<HTMLElement>('.nav-tab').forEach((tab) => {
     tab.classList.toggle('active', tab.dataset.pageTarget === nextPage);
   });
+  if (scrollToTop) {
+    scrollPhoneViewportToTop(scrollBehavior);
+  }
 }
 
 function setupPhoneNavigation(): void {
@@ -647,14 +664,14 @@ function setupPhoneNavigation(): void {
     tab.addEventListener('click', () => {
       const target = tab.dataset.pageTarget as typeof activePhonePage | undefined;
       if (!target) return;
-      setActivePhonePage(target);
+      setActivePhonePage(target, { scrollToTop: true });
     });
   });
 
   const editCustomButton = document.getElementById('dashboard-edit-custom');
   const customSetSection = document.getElementById('custom-set-section');
   editCustomButton?.addEventListener('click', () => {
-    setActivePhonePage('settings');
+    setActivePhonePage('settings', { scrollBehavior: 'auto' });
     customSetSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
 }
@@ -1331,7 +1348,11 @@ function handleSingleTap(source: InteractionSource) {
       return;
     }
 
-    cycleRunningPanels();
+    if (homeSelection === 'settings') {
+      openSettingsPanel(true);
+    } else {
+      openTimerPanel(true);
+    }
     return;
   }
 
@@ -1350,6 +1371,15 @@ function handleSingleTap(source: InteractionSource) {
 
     if (panel === 'timer') {
       showRunningActionPrompt();
+      return;
+    }
+
+    if (panel === 'home') {
+      if (homeSelection === 'settings') {
+        openSettingsPanel(true);
+      } else {
+        openTimerPanel(true);
+      }
       return;
     }
 
@@ -1401,9 +1431,22 @@ function handleDoubleTap(source: InteractionSource): void {
   const panel = effectivePanel();
   pushDetailedLog('[INPUT]', `doubleTap panel=${panel} state=${state} source=${source}`);
 
-  if (state === TimerState.RUNNING || state === TimerState.PAUSED) {
+  if (state === TimerState.RUNNING) {
     if (source !== 'glasses') {
-      pushDetailedLog('[INPUT]', `doubleTap ignored while active source=${source}`);
+      pushDetailedLog('[INPUT]', `doubleTap ignored while running source=${source}`);
+      return;
+    }
+
+    clearRemoteStartPending();
+    clearRunningActionPrompt();
+    openHomePanel('timer', true);
+    pushDetailedLog('[INPUT]', 'doubleTap running -> dashboard');
+    return;
+  }
+
+  if (state === TimerState.PAUSED) {
+    if (source !== 'glasses') {
+      pushDetailedLog('[INPUT]', `doubleTap ignored while paused source=${source}`);
       return;
     }
 
@@ -1414,7 +1457,7 @@ function handleDoubleTap(source: InteractionSource): void {
       return;
     }
 
-    pushDetailedLog('[INPUT]', `doubleTap ignored while active promptVisible=${runningActionPromptVisible}`);
+    pushDetailedLog('[INPUT]', `doubleTap ignored while paused promptVisible=${runningActionPromptVisible}`);
     return;
   }
 
@@ -1458,7 +1501,7 @@ function handleSwipe(dir: 1 | -1, source: InteractionSource) {
   pushDetailedLog('[INPUT]', `swipe dir=${dir} accepted panel=${panel} state=${state} source=${source}`);
 
   if (state === TimerState.RUNNING || state === TimerState.PAUSED) {
-    if (source !== 'glasses' || panel !== 'settings') {
+    if (panel !== 'settings' && panel !== 'home') {
       pushDetailedLog('[INPUT]', `swipe ignored while active panel=${panel} source=${source}`);
       return;
     }

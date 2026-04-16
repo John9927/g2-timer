@@ -208,8 +208,8 @@ function buildHomeContent(
   const timerLabel = state === TimerState.RUNNING
     ? formatTime(remainingSeconds)
     : `${selectedPreset} min`;
-  const primaryHint = state === TimerState.RUNNING ? 'Tap: next screen' : 'Tap: open';
-  const secondaryHint = state === TimerState.RUNNING ? '2Tap: timer' : 'Swipe: choose';
+  const primaryHint = 'Tap: open';
+  const secondaryHint = 'Swipe: choose';
 
   return [
     'G2 Timer',
@@ -246,7 +246,7 @@ function buildRunningActionContent(state: TimerState, remainingSeconds: number):
     title,
     formatTime(remainingSeconds),
     `Tap: ${actionLabel}`,
-    '2Tap: stop',
+    '2Tap: menu',
   ].join('\n');
 }
 
@@ -264,7 +264,7 @@ function buildSettingsContent(
     `${settingsField === 'doneBlinkCount' ? '>' : ' '} Blink ${formatTimerLayoutValue('doneBlinkCount', layoutSettings)}`,
     'Tap: change',
     'Swipe: next field',
-    `2Tap: ${state === TimerState.RUNNING ? 'timer' : 'menu'}`,
+    '2Tap: menu',
   ].join('\n');
 }
 
