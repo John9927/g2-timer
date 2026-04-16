@@ -20,9 +20,13 @@ export const LARGE_TIMER_MARGIN_Y = 20;
 export const COMPACT_TIMER_MARGIN_X = 0;
 export const COMPACT_TIMER_MARGIN_Y = 0;
 export const COMPACT_TIMER_WIDTH = 200;
-export const COMPACT_TIMER_EDGE_MIN_WIDTH = 140;
-export const COMPACT_TIMER_EDGE_CHAR_WIDTH = 28;
-export const COMPACT_TIMER_EDGE_EXTRA_WIDTH = 20;
+export const COMPACT_DISPLAY_EDGE_MIN_WIDTH = 100;
+export const COMPACT_DISPLAY_EDGE_CHAR_WIDTH = 0;
+export const COMPACT_DISPLAY_EDGE_EXTRA_WIDTH = 0;
+export const COMPACT_DISPLAY_CENTER_BIAS_X = 82;
+export const COMPACT_PREVIEW_EDGE_MIN_WIDTH = 140;
+export const COMPACT_PREVIEW_EDGE_CHAR_WIDTH = 28;
+export const COMPACT_PREVIEW_EDGE_EXTRA_WIDTH = 20;
 export const COMPACT_TIMER_HEIGHT = 70;
 export const TIMER_SS_GAP = TIMER_GROUP_GAP;
 
@@ -95,25 +99,44 @@ export function getLargeTimerLayout(settings: LayoutAxes, minutesText: string): 
   };
 }
 
-export function estimateCompactTimerWidth(content: string): number {
+function estimateCompactTimerWidth(
+  content: string,
+  minWidth: number,
+  charWidth: number,
+  extraWidth: number,
+): number {
   const visibleContent = content.trim();
   if (!visibleContent) {
-    return COMPACT_TIMER_EDGE_MIN_WIDTH;
+    return minWidth;
   }
 
   return Math.max(
-    COMPACT_TIMER_EDGE_MIN_WIDTH,
-    visibleContent.length * COMPACT_TIMER_EDGE_CHAR_WIDTH + COMPACT_TIMER_EDGE_EXTRA_WIDTH,
+    minWidth,
+    visibleContent.length * charWidth + extraWidth,
   );
 }
 
 export function getCompactTimerWidth(horizontal: Horizontal, content: string): number {
-  return horizontal === 'center' ? COMPACT_TIMER_WIDTH : estimateCompactTimerWidth(content);
+  return horizontal === 'center'
+    ? COMPACT_TIMER_WIDTH
+    : estimateCompactTimerWidth(
+      content,
+      COMPACT_DISPLAY_EDGE_MIN_WIDTH,
+      COMPACT_DISPLAY_EDGE_CHAR_WIDTH,
+      COMPACT_DISPLAY_EDGE_EXTRA_WIDTH,
+    );
 }
 
 export function alignCompactHorizontal(horizontal: Horizontal, content: string): number {
   const compactWidth = getCompactTimerWidth(horizontal, content);
-  return alignHorizontal(horizontal, compactWidth, COMPACT_TIMER_MARGIN_X);
+  const base = alignHorizontal(horizontal, compactWidth, COMPACT_TIMER_MARGIN_X);
+
+  if (horizontal !== 'center') {
+    return base;
+  }
+
+  const maxX = DISPLAY_WIDTH - COMPACT_TIMER_WIDTH - COMPACT_TIMER_MARGIN_X;
+  return Math.min(maxX, base + COMPACT_DISPLAY_CENTER_BIAS_X);
 }
 
 export function getCompactTimerLayout(settings: LayoutAxes, content: string): TimerBoxLayout {
@@ -127,11 +150,33 @@ export function getCompactTimerLayout(settings: LayoutAxes, content: string): Ti
   };
 }
 
+function getCompactPreviewTimerWidth(horizontal: Horizontal, content: string): number {
+  return horizontal === 'center'
+    ? COMPACT_TIMER_WIDTH
+    : estimateCompactTimerWidth(
+      content,
+      COMPACT_PREVIEW_EDGE_MIN_WIDTH,
+      COMPACT_PREVIEW_EDGE_CHAR_WIDTH,
+      COMPACT_PREVIEW_EDGE_EXTRA_WIDTH,
+    );
+}
+
+function getCompactPreviewTimerLayout(settings: LayoutAxes, content: string): TimerBoxLayout {
+  const width = getCompactPreviewTimerWidth(settings.horizontal, content);
+
+  return {
+    x: alignHorizontal(settings.horizontal, width, COMPACT_TIMER_MARGIN_X),
+    y: alignVertical(settings.vertical, COMPACT_TIMER_HEIGHT, COMPACT_TIMER_MARGIN_Y),
+    width,
+    height: COMPACT_TIMER_HEIGHT,
+  };
+}
+
 export function getPreviewAnchor(settings: TimerLayoutSettings, timeText: string): PreviewAnchor {
   const [minutesText = '00'] = timeText.split(':');
   const layout = settings.format === 'large'
     ? getLargeTimerLayout(settings, minutesText)
-    : getCompactTimerLayout(settings, timeText);
+    : getCompactPreviewTimerLayout(settings, timeText);
 
   const leftPx = settings.horizontal === 'left'
     ? layout.x

@@ -164,11 +164,10 @@ function timeStringToSeconds(time: string): number {
 
 function buildPresetRows(presetMinutes: number[], selectedPreset: number): string[] {
   const rows: string[] = [];
-  const visiblePresets = presetMinutes.slice(0, 6);
-  const columns = visiblePresets.some((preset) => preset >= 100) ? 3 : 4;
+  const columns = presetMinutes.some((preset) => preset >= 100) ? 3 : 4;
 
-  for (let index = 0; index < visiblePresets.length; index += columns) {
-    const row = visiblePresets
+  for (let index = 0; index < presetMinutes.length; index += columns) {
+    const row = presetMinutes
       .slice(index, index + columns)
       .map((preset) => (preset === selectedPreset ? `[${preset}]` : `${preset}`))
       .join('  ');

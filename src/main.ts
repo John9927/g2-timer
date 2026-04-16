@@ -556,21 +556,9 @@ function getDisplaySummary(): string {
   if (state === TimerState.PAUSED) {
     return `Home menu - timer paused ${formatTime(timerState.getRemainingSeconds())}`;
   }
-  if (false && glassesPanel === 'settings') {
-    return `Timer ${state.toLowerCase()} Â· ${formatTime(timerState.getRemainingSeconds())}`;
-  }
 
-  if (false && glassesPanel === 'settings') {
-    return `Layout settings Â· ${formatTimerLayoutLabel()}`;
-  }
-
-  if (false && glassesPanel === 'timer') {
-    return `Timer setup Â· ${timerState.getSelectedPreset()} min`;
-  }
-
-  return `Home menu Â· ${homeSelection === 'timer' ? 'Timer' : 'Layout settings'}`;
+  return `Home menu - ${homeSelection === 'timer' ? 'Timer' : 'Layout settings'}`;
 }
-
 function getRemoteGestureHelp(): string {
   if (!timerState) {
     return 'Glasses controls load after connection.';
