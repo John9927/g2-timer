@@ -8,18 +8,17 @@ import {
   setUiDebugLogger,
   type GlassesNavigationState,
   type GlassesPanel,
-  type HomeSelection,
+  type GlassesLayoutField,
+  type IdleTimerActionSelection,
+  type TimerActionSelection,
 } from './ui';
 import { TimerState } from './constants';
 import {
-  DEFAULT_TIMER_LAYOUT_SETTINGS,
   adjustTimerLayoutSetting,
+  DEFAULT_TIMER_LAYOUT_SETTINGS,
   formatTimerLayoutValue,
   loadTimerLayoutSettings,
-  nextTimerLayoutField,
-  previousTimerLayoutField,
   saveTimerLayoutSettings,
-  type TimerLayoutField,
   type TimerLayoutSettings,
 } from './layoutSettings';
 import {
@@ -47,9 +46,13 @@ let remoteStartScheduledAt: number | null = null;
 let committedLayoutSettings: TimerLayoutSettings = DEFAULT_TIMER_LAYOUT_SETTINGS;
 let committedPresetSettings: TimerPresetSettings = DEFAULT_TIMER_PRESET_SETTINGS;
 let glassesPanel: GlassesPanel = 'home';
-let homeSelection: HomeSelection = 'timer';
-let settingsField: TimerLayoutField = 'format';
 let runningActionPromptVisible = false;
+let timerActionSelection: TimerActionSelection = 'primary';
+let resetConfirmationVisible = false;
+let idleActionPromptVisible = false;
+let idleTimerActionSelection: IdleTimerActionSelection = 'start';
+let layoutEditorVisible = false;
+let layoutEditorField: GlassesLayoutField = 'format';
 
 type RenderReason = 'tick' | 'state' | 'foreground' | 'manual';
 type InteractionSource = 'ring' | 'glasses' | 'unknown';
@@ -71,11 +74,12 @@ let estimatedFixedTickDelayMs = DISPLAY_LEAD_DEFAULT_MS;
 let displayTickIntervalId: ReturnType<typeof setInterval> | null = null;
 let lastDisplayTickSecondSent: number | null = null;
 let lastRenderedPresetButtonsSignature = '';
+let activeLayoutDetail: 'format' | 'position' | 'doneBlinkCount' | 'showLayoutSummaryOnGlasses' | null = null;
 let lastRawInteractionEventType: number | null = null;
 let lastRawInteractionEventSource: number | null = null;
 let lastRawInteractionEventAt = 0;
 let lastKnownTimerState: TimerState | null = null;
-let activePhonePage: 'home' | 'settings' | 'advanced' = 'home';
+let activePhonePage: 'home' | 'settings' | 'tutorial' | 'advanced' = 'home';
 
 const RAW_EVENT_FALLBACK_WINDOW_MS = 500;
 
@@ -277,6 +281,10 @@ function activeLayoutSettings(): TimerLayoutSettings {
   return committedLayoutSettings;
 }
 
+function canEditLayoutOnGlasses(): boolean {
+  return committedLayoutSettings.showLayoutSummaryOnGlasses;
+}
+
 function activePresetMinutes(): number[] {
   return committedPresetSettings.customPresets;
 }
@@ -296,37 +304,115 @@ function effectivePanel(): GlassesPanel {
 function currentNavigationState(): GlassesNavigationState {
   return {
     panel: glassesPanel,
-    homeSelection,
-    settingsField,
     runningActionPromptVisible,
+    timerActionSelection,
+    resetConfirmationVisible,
+    idleActionPromptVisible,
+    idleTimerActionSelection,
+    layoutEditorVisible,
+    layoutEditorField,
   };
 }
 
 function clearRunningActionPrompt(): void {
   runningActionPromptVisible = false;
+  resetConfirmationVisible = false;
+  timerActionSelection = 'primary';
+  idleActionPromptVisible = false;
+  idleTimerActionSelection = 'start';
+  layoutEditorVisible = false;
+  layoutEditorField = 'format';
 }
 
 function showRunningActionPrompt(): void {
   runningActionPromptVisible = true;
+  resetConfirmationVisible = false;
+  timerActionSelection = 'primary';
+  idleActionPromptVisible = false;
+  idleTimerActionSelection = 'start';
+  layoutEditorVisible = false;
   pushDetailedLog('[NAV]', 'running action prompt shown');
   updateRemoteView();
   sendToGlassesImmediate('manual');
+}
+
+function showResetConfirmationPrompt(): void {
+  resetConfirmationVisible = true;
+  idleActionPromptVisible = false;
+  layoutEditorVisible = false;
+  pushDetailedLog('[NAV]', 'reset confirmation shown');
+  updateRemoteView();
+  sendToGlassesImmediate('manual');
+}
+
+function hideResetConfirmationPrompt(): void {
+  resetConfirmationVisible = false;
+  timerActionSelection = 'primary';
+  pushDetailedLog('[NAV]', 'reset confirmation hidden');
+  updateRemoteView();
+  sendToGlassesImmediate('manual');
+}
+
+function showIdleTimerActionPrompt(): void {
+  runningActionPromptVisible = false;
+  resetConfirmationVisible = false;
+  idleActionPromptVisible = true;
+  idleTimerActionSelection = 'start';
+  layoutEditorVisible = false;
+  pushDetailedLog('[NAV]', 'idle timer action prompt shown');
+  updateRemoteView();
+  sendToGlassesImmediate('manual');
+}
+
+function hideIdleTimerActionPrompt(): void {
+  idleActionPromptVisible = false;
+  idleTimerActionSelection = 'start';
+  pushDetailedLog('[NAV]', 'idle timer action prompt hidden');
+  updateRemoteView();
+  sendToGlassesImmediate('manual');
+}
+
+function showLayoutEditor(): void {
+  runningActionPromptVisible = false;
+  resetConfirmationVisible = false;
+  idleActionPromptVisible = false;
+  idleTimerActionSelection = 'start';
+  layoutEditorVisible = true;
+  layoutEditorField = 'format';
+  pushDetailedLog('[NAV]', 'layout editor shown');
+  updateRemoteView();
+  sendToGlassesImmediate('manual');
+}
+
+function hideLayoutEditor(): void {
+  layoutEditorVisible = false;
+  layoutEditorField = 'format';
+  pushDetailedLog('[NAV]', 'layout editor hidden');
+  updateRemoteView();
+  sendToGlassesImmediate('manual');
+}
+
+function nextGlassesLayoutField(field: GlassesLayoutField, dir: 1 | -1): GlassesLayoutField {
+  const fields: GlassesLayoutField[] = ['format', 'vertical', 'horizontal', 'doneBlinkCount'];
+  const currentIndex = fields.indexOf(field);
+  const safeIndex = currentIndex >= 0 ? currentIndex : 0;
+  const nextIndex = (safeIndex + dir + fields.length) % fields.length;
+  return fields[nextIndex];
 }
 
 async function persistLayoutSettings(settings: TimerLayoutSettings): Promise<void> {
   await saveTimerLayoutSettings(settings, bridge);
 }
 
-function openHomePanel(nextSelection: HomeSelection = homeSelection, allowWhileRunning = false): void {
+function openHomePanel(allowWhileRunning = false): void {
   if (isTimerRunning() && !allowWhileRunning) {
     pushDetailedLog('[NAV]', 'home panel ignored: timer running');
     return;
   }
 
   clearRunningActionPrompt();
-  homeSelection = nextSelection;
   glassesPanel = 'home';
-  pushDetailedLog('[NAV]', `panel=home selection=${homeSelection}`);
+  pushDetailedLog('[NAV]', 'panel=home');
   updateRemoteView();
   sendToGlassesImmediate('manual');
 }
@@ -338,24 +424,8 @@ function openTimerPanel(allowWhileRunning = false): void {
   }
 
   clearRunningActionPrompt();
-  homeSelection = 'timer';
   glassesPanel = 'timer';
   pushDetailedLog('[NAV]', 'panel=timer');
-  updateRemoteView();
-  sendToGlassesImmediate('manual');
-}
-
-function openSettingsPanel(allowWhileRunning = false): void {
-  if (isTimerRunning() && !allowWhileRunning) {
-    pushDetailedLog('[NAV]', 'settings panel ignored: timer running');
-    return;
-  }
-
-  clearRunningActionPrompt();
-  homeSelection = 'settings';
-  glassesPanel = 'settings';
-  settingsField = 'format';
-  pushDetailedLog('[NAV]', 'panel=settings');
   updateRemoteView();
   sendToGlassesImmediate('manual');
 }
@@ -384,12 +454,7 @@ function cycleRunningPanels(): void {
   if (!timerState || timerState.getState() !== TimerState.RUNNING) return;
 
   if (glassesPanel === 'timer') {
-    openHomePanel('timer', true);
-    return;
-  }
-
-  if (glassesPanel === 'home') {
-    openSettingsPanel(true);
+    openHomePanel(true);
     return;
   }
 
@@ -398,6 +463,12 @@ function cycleRunningPanels(): void {
 
 function persistCurrentLayoutSettings(): void {
   timerState?.setDoneBlinkCount(committedLayoutSettings.doneBlinkCount);
+  if (!canEditLayoutOnGlasses()) {
+    idleActionPromptVisible = false;
+    idleTimerActionSelection = 'start';
+    layoutEditorVisible = false;
+    layoutEditorField = 'format';
+  }
   void persistLayoutSettings(committedLayoutSettings).catch((error) => {
     pushDetailedLog('[LAYOUT]', `persist error ${String(error)}`);
   });
@@ -521,6 +592,7 @@ function formatTimerLayoutLabel(): string {
     formatTimerLayoutValue('vertical', committedLayoutSettings),
     formatTimerLayoutValue('horizontal', committedLayoutSettings),
     `Blink ${formatTimerLayoutValue('doneBlinkCount', committedLayoutSettings)}`,
+    `Glasses ${formatTimerLayoutValue('showLayoutSummaryOnGlasses', committedLayoutSettings)}`,
   ].join(' / ');
 }
 
@@ -530,13 +602,18 @@ function getDisplaySummary(): string {
   }
 
   const state = timerState.getState();
-  if (glassesPanel === 'settings') {
-    const prefix = state === TimerState.RUNNING
-      ? `Layout settings - ${formatTime(timerState.getRemainingSeconds())}`
-      : 'Layout settings';
-    return `${prefix} - ${formatTimerLayoutLabel()}`;
+  if (layoutEditorVisible) {
+    return `Layout editor - ${formatTimerLayoutLabel()}`;
   }
-
+  if (resetConfirmationVisible) {
+    return `Reset confirmation - ${formatTime(timerState.getSelectedPreset() * 60)}`;
+  }
+  if (idleActionPromptVisible && state === TimerState.IDLE) {
+    return `Timer actions - ${timerState.getSelectedPreset()} min`;
+  }
+  if (runningActionPromptVisible && (state === TimerState.RUNNING || state === TimerState.PAUSED)) {
+    return `Timer actions - ${formatTime(timerState.getRemainingSeconds())}`;
+  }
   if (glassesPanel === 'timer') {
     if (state === TimerState.RUNNING) {
       return `Timer running - ${formatTime(timerState.getRemainingSeconds())}`;
@@ -547,7 +624,7 @@ function getDisplaySummary(): string {
     if (state === TimerState.DONE) {
       return 'Timer done - 00:00';
     }
-    return `Timer setup - ${timerState.getSelectedPreset()} min`;
+    return `Timer setup - ${timerState.getSelectedPreset()} min - ${formatTimerLayoutLabel()}`;
   }
 
   if (state === TimerState.RUNNING) {
@@ -557,7 +634,7 @@ function getDisplaySummary(): string {
     return `Home menu - timer paused ${formatTime(timerState.getRemainingSeconds())}`;
   }
 
-  return `Home menu - ${homeSelection === 'timer' ? 'Timer' : 'Layout settings'}`;
+  return `Home menu - Timer - ${formatTimerLayoutLabel()}`;
 }
 function getRemoteGestureHelp(): string {
   if (!timerState) {
@@ -565,33 +642,44 @@ function getRemoteGestureHelp(): string {
   }
 
   const state = timerState.getState();
+  if (layoutEditorVisible) {
+    return 'On glasses: swipe moves between layout fields, tap changes the selected value, double tap returns to Timer.';
+  }
+
   if (state === TimerState.RUNNING) {
     if (glassesPanel === 'home') {
-      return 'On glasses: swipe chooses Timer or Layout, tap opens the selected screen, double tap returns to the dashboard.';
+      return 'On glasses: tap opens Timer, double tap returns to the dashboard.';
     }
-    if (glassesPanel === 'settings') {
-      return 'On glasses: tap changes the selected setting, swipe moves between fields, double tap returns to the dashboard.';
+    if (resetConfirmationVisible) {
+      return 'On glasses: tap confirms the reset. Double tap cancels and returns to timer actions.';
     }
     return runningActionPromptVisible
-      ? 'On glasses: tap pauses the timer, double tap returns to the dashboard.'
+      ? 'On glasses: swipe chooses Pause or Reset, tap confirms, double tap closes timer actions.'
       : 'On glasses: tap opens pause actions. Double tap returns to the dashboard. Ring taps stay locked while the timer is active.';
   }
 
   if (state === TimerState.PAUSED) {
+    if (resetConfirmationVisible) {
+      return 'On glasses: tap confirms the reset. Double tap cancels and returns to timer actions.';
+    }
     return runningActionPromptVisible
-      ? 'On glasses: tap resumes the timer, double tap stops it.'
-      : 'On glasses: tap opens resume or stop actions. Double tap on Timer resumes. Ring taps stay locked while the timer is active.';
+      ? 'On glasses: swipe chooses Resume or Reset, tap confirms, double tap closes timer actions.'
+      : 'On glasses: tap opens resume or reset actions. Ring taps stay locked while the timer is active.';
   }
 
-  if (glassesPanel === 'settings') {
-    return 'On glasses: tap moves to the next setting field, swipe changes the selected setting, double tap returns to the menu.';
+  if (idleActionPromptVisible) {
+    return canEditLayoutOnGlasses()
+      ? 'On glasses: swipe chooses Start or Layout, tap confirms, double tap closes timer actions.'
+      : 'On glasses: tap starts the timer, double tap closes timer actions.';
   }
 
   if (glassesPanel === 'timer') {
-    return 'On glasses: swipe changes shortcuts, tap starts the timer, double tap returns to the menu.';
+    return canEditLayoutOnGlasses()
+      ? 'On glasses: swipe changes shortcuts, tap opens Start or Layout actions, double tap returns to the menu.'
+      : 'On glasses: swipe changes shortcuts, tap starts the timer, double tap returns to the menu.';
   }
 
-  return 'On glasses: swipe chooses Timer or Settings, tap opens the selected screen, double tap exits.';
+  return 'On glasses: tap opens Timer, double tap exits.';
 }
 
 function getPhoneStateLabel(state: TimerState): string {
@@ -602,9 +690,8 @@ function getPhoneStateLabel(state: TimerState): string {
 }
 
 function getPhonePanelLabel(): string {
-  if (glassesPanel === 'settings') return 'Layout settings';
   if (glassesPanel === 'timer') return 'Timer setup';
-  return homeSelection === 'settings' ? 'Home / settings' : 'Home / timer';
+  return 'Home / timer';
 }
 
 function getPhonePositionLabel(settings: TimerLayoutSettings): string {
@@ -631,9 +718,11 @@ function applyPreviewTimerLayout(
 function getGestureTitle(): string {
   if (!timerState) return 'Ready when connected';
   const state = timerState.getState();
-  if (state === TimerState.RUNNING) return runningActionPromptVisible ? 'Pause or stop' : 'Timer in progress';
-  if (state === TimerState.PAUSED) return runningActionPromptVisible ? 'Resume or stop' : 'Timer paused';
-  if (glassesPanel === 'settings') return 'Layout controls';
+  if (layoutEditorVisible) return 'Layout controls';
+  if (resetConfirmationVisible) return 'Confirm reset';
+  if (idleActionPromptVisible) return 'Timer actions';
+  if (state === TimerState.RUNNING) return runningActionPromptVisible ? 'Timer actions' : 'Timer in progress';
+  if (state === TimerState.PAUSED) return runningActionPromptVisible ? 'Timer actions' : 'Timer paused';
   if (glassesPanel === 'timer') return 'Preset controls';
   return 'Home navigation';
 }
@@ -674,6 +763,15 @@ function setupPhoneNavigation(): void {
     setActivePhonePage('settings', { scrollBehavior: 'auto' });
     customSetSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
+
+  document.querySelectorAll<HTMLElement>('.layout-card').forEach((card) => {
+    card.addEventListener('click', () => {
+      const detail = card.dataset.layoutDetail as typeof activeLayoutDetail;
+      if (!detail) return;
+      activeLayoutDetail = activeLayoutDetail === detail ? null : detail;
+      updateRemoteView();
+    });
+  });
 }
 
 function ensurePresetButtonsRendered(): void {
@@ -703,6 +801,8 @@ function updateRemoteView() {
   const displaySummary = document.getElementById('glasses-view-summary');
   const screenBtns = document.querySelectorAll('#remote-screen-buttons .screen-btn');
   const layoutBtns = document.querySelectorAll('#layout-controls .layout-btn');
+  const layoutCards = document.querySelectorAll('#layout-controls .layout-card');
+  const layoutDetailPanels = document.querySelectorAll<HTMLElement>('#layout-controls [data-layout-detail-panel]');
   const dashboardSizeBtns = document.querySelectorAll('.size-btn');
   const dashboardPositionBtns = document.querySelectorAll('.position-btn');
   const exactMinuteInput = document.getElementById('exact-minute-input') as HTMLInputElement | null;
@@ -718,6 +818,10 @@ function updateRemoteView() {
   const phoneStateLabel = document.getElementById('phone-state-label');
   const phonePanelLabel = document.getElementById('phone-panel-label');
   const phoneGestureTitle = document.getElementById('phone-gesture-title');
+  const layoutCardFormatValue = document.getElementById('layout-card-format-value');
+  const layoutCardPositionValue = document.getElementById('layout-card-position-value');
+  const layoutCardBlinkValue = document.getElementById('layout-card-blink-value');
+  const layoutCardGlassesLabelValue = document.getElementById('layout-card-glasses-label-value');
 
   const connected = !!(bridge && timerState);
   if (status) {
@@ -742,6 +846,35 @@ function updateRemoteView() {
   if (saveCustomPresetsBtn) {
     saveCustomPresetsBtn.disabled = !connected;
   }
+
+  if (layoutCardFormatValue) {
+    layoutCardFormatValue.textContent = formatTimerLayoutValue('format', committedLayoutSettings);
+  }
+  if (layoutCardPositionValue) {
+    layoutCardPositionValue.textContent = getPhonePositionLabel(committedLayoutSettings);
+  }
+  if (layoutCardBlinkValue) {
+    layoutCardBlinkValue.textContent = formatTimerLayoutValue('doneBlinkCount', committedLayoutSettings);
+  }
+  if (layoutCardGlassesLabelValue) {
+    layoutCardGlassesLabelValue.textContent = formatTimerLayoutValue('showLayoutSummaryOnGlasses', committedLayoutSettings);
+  }
+
+  layoutCards.forEach((card) => {
+    const detail = ((card as HTMLElement).dataset.layoutDetail || '') as typeof activeLayoutDetail;
+    const isActive = detail !== null && detail === activeLayoutDetail;
+    card.classList.toggle('active', isActive);
+    (card as HTMLButtonElement).disabled = !connected;
+    const chevron = card.querySelector<HTMLElement>('.layout-card-chevron');
+    if (chevron) {
+      chevron.textContent = isActive ? '−' : '+';
+    }
+  });
+
+  layoutDetailPanels.forEach((panel) => {
+    const detail = (panel.dataset.layoutDetailPanel || '') as typeof activeLayoutDetail;
+    panel.classList.toggle('active', detail !== null && detail === activeLayoutDetail);
+  });
 
   const pending = remoteStartScheduledAt !== null;
 
@@ -810,6 +943,7 @@ function updateRemoteView() {
       if (field === 'vertical') isSelected = committedLayoutSettings.vertical === value;
       if (field === 'horizontal') isSelected = committedLayoutSettings.horizontal === value;
       if (field === 'doneBlinkCount') isSelected = String(committedLayoutSettings.doneBlinkCount) === value;
+      if (field === 'showLayoutSummaryOnGlasses') isSelected = String(committedLayoutSettings.showLayoutSummaryOnGlasses) === value;
       button.classList.toggle('selected', isSelected);
       (button as HTMLButtonElement).disabled = !connected;
     });
@@ -991,7 +1125,6 @@ function setupRemoteControl() {
     pushDetailedLog('[REMOTE]', `preset apply ${minutes}`);
     clearRunningActionPrompt();
     glassesPanel = 'timer';
-    homeSelection = 'timer';
     timerState.setPreset(minutes);
   };
 
@@ -1010,7 +1143,6 @@ function setupRemoteControl() {
       clearRemoteStartPending();
       clearRunningActionPrompt();
       glassesPanel = 'timer';
-      homeSelection = 'timer';
       timerState.toggleStartPause();
       return;
     }
@@ -1018,7 +1150,6 @@ function setupRemoteControl() {
       if (remoteStartScheduledAt !== null) return;
       clearRunningActionPrompt();
       glassesPanel = 'timer';
-      homeSelection = 'timer';
       timerState.start();
       remoteStartScheduledAt = Date.now();
       remoteStartCountdownIntervalId = setInterval(() => updateRemoteView(), REMOTE_START_COUNTDOWN_INTERVAL_MS);
@@ -1077,8 +1208,6 @@ function setupRemoteControl() {
       pushDetailedLog('[REMOTE]', `screen click ${target}`);
       if (target === 'timer') {
         openTimerPanel();
-      } else if (target === 'settings') {
-        openSettingsPanel();
       } else {
         openHomePanel();
       }
@@ -1094,17 +1223,15 @@ function setupRemoteControl() {
       if (!field || !value) return;
 
       pushDetailedLog('[REMOTE]', `layout click field=${field} value=${value}`);
-      const normalizedValue = field === 'doneBlinkCount' ? Number(value) : value;
+      const normalizedValue = field === 'doneBlinkCount'
+        ? Number(value)
+        : field === 'showLayoutSummaryOnGlasses'
+          ? value === 'true'
+          : value;
       committedLayoutSettings = {
         ...committedLayoutSettings,
         [field]: normalizedValue,
       } as TimerLayoutSettings;
-      if (isIdleOnGlasses()) {
-        homeSelection = 'settings';
-        if (glassesPanel === 'home') {
-          glassesPanel = 'settings';
-        }
-      }
       persistCurrentLayoutSettings();
       updateRemoteView();
       sendToGlassesImmediate('manual');
@@ -1324,7 +1451,20 @@ function handleSingleTap(source: InteractionSource) {
       return;
     }
 
+    if (resetConfirmationVisible) {
+      clearRemoteStartPending();
+      clearRunningActionPrompt();
+      glassesPanel = 'timer';
+      timerState.resetToPreset();
+      return;
+    }
+
     if (runningActionPromptVisible) {
+      if (timerActionSelection === 'reset') {
+        showResetConfirmationPrompt();
+        return;
+      }
+
       clearRemoteStartPending();
       clearRunningActionPrompt();
       timerState.pause();
@@ -1336,23 +1476,7 @@ function handleSingleTap(source: InteractionSource) {
       return;
     }
 
-    if (panel === 'settings') {
-      committedLayoutSettings = adjustTimerLayoutSetting(committedLayoutSettings, settingsField, 1);
-      pushDetailedLog(
-        '[LAYOUT]',
-        `tap adjust field=${settingsField} -> ${committedLayoutSettings.format}/${committedLayoutSettings.vertical}/${committedLayoutSettings.horizontal}`,
-      );
-      persistCurrentLayoutSettings();
-      updateRemoteView();
-      sendToGlassesImmediate('manual');
-      return;
-    }
-
-    if (homeSelection === 'settings') {
-      openSettingsPanel(true);
-    } else {
-      openTimerPanel(true);
-    }
+    openTimerPanel(true);
     return;
   }
 
@@ -1362,7 +1486,20 @@ function handleSingleTap(source: InteractionSource) {
       return;
     }
 
+    if (resetConfirmationVisible) {
+      clearRemoteStartPending();
+      clearRunningActionPrompt();
+      glassesPanel = 'timer';
+      timerState.resetToPreset();
+      return;
+    }
+
     if (runningActionPromptVisible) {
+      if (timerActionSelection === 'reset') {
+        showResetConfirmationPrompt();
+        return;
+      }
+
       clearRemoteStartPending();
       clearRunningActionPrompt();
       timerState.start();
@@ -1375,11 +1512,7 @@ function handleSingleTap(source: InteractionSource) {
     }
 
     if (panel === 'home') {
-      if (homeSelection === 'settings') {
-        openSettingsPanel(true);
-      } else {
-        openTimerPanel(true);
-      }
+      openTimerPanel(true);
       return;
     }
 
@@ -1396,25 +1529,20 @@ function handleSingleTap(source: InteractionSource) {
     clearRemoteStartPending();
     clearRunningActionPrompt();
     glassesPanel = 'timer';
-    homeSelection = 'timer';
     timerState.resetToPreset();
     return;
   }
 
   if (panel === 'home') {
-    if (homeSelection === 'settings') {
-      openSettingsPanel();
-    } else {
-      openTimerPanel();
-    }
+    openTimerPanel();
     return;
   }
 
-  if (panel === 'settings') {
-    committedLayoutSettings = adjustTimerLayoutSetting(committedLayoutSettings, settingsField, 1);
+  if (layoutEditorVisible) {
+    committedLayoutSettings = adjustTimerLayoutSetting(committedLayoutSettings, layoutEditorField, 1);
     pushDetailedLog(
       '[LAYOUT]',
-      `tap adjust field=${settingsField} -> ${committedLayoutSettings.format}/${committedLayoutSettings.vertical}/${committedLayoutSettings.horizontal}`,
+      `tap adjust field=${layoutEditorField} -> ${committedLayoutSettings.format}/${committedLayoutSettings.vertical}/${committedLayoutSettings.horizontal}`,
     );
     persistCurrentLayoutSettings();
     updateRemoteView();
@@ -1422,7 +1550,24 @@ function handleSingleTap(source: InteractionSource) {
     return;
   }
 
-  timerState.toggleStartPause();
+  if (idleActionPromptVisible) {
+    if (idleTimerActionSelection === 'layout' && canEditLayoutOnGlasses()) {
+      showLayoutEditor();
+      return;
+    }
+
+    clearRemoteStartPending();
+    clearRunningActionPrompt();
+    timerState.start();
+    return;
+  }
+
+  if (!canEditLayoutOnGlasses()) {
+    timerState.start();
+    return;
+  }
+
+  showIdleTimerActionPrompt();
 }
 
 function handleDoubleTap(source: InteractionSource): void {
@@ -1437,9 +1582,22 @@ function handleDoubleTap(source: InteractionSource): void {
       return;
     }
 
+    if (resetConfirmationVisible) {
+      hideResetConfirmationPrompt();
+      return;
+    }
+
+    if (runningActionPromptVisible) {
+      clearRunningActionPrompt();
+      updateRemoteView();
+      sendToGlassesImmediate('manual');
+      pushDetailedLog('[INPUT]', 'doubleTap running -> close actions');
+      return;
+    }
+
     clearRemoteStartPending();
     clearRunningActionPrompt();
-    openHomePanel('timer', true);
+    openHomePanel(true);
     pushDetailedLog('[INPUT]', 'doubleTap running -> dashboard');
     return;
   }
@@ -1450,10 +1608,16 @@ function handleDoubleTap(source: InteractionSource): void {
       return;
     }
 
+    if (resetConfirmationVisible) {
+      hideResetConfirmationPrompt();
+      return;
+    }
+
     if (runningActionPromptVisible) {
-      clearRemoteStartPending();
       clearRunningActionPrompt();
-      timerState.resetToPreset();
+      updateRemoteView();
+      sendToGlassesImmediate('manual');
+      pushDetailedLog('[INPUT]', 'doubleTap paused -> close actions');
       return;
     }
 
@@ -1461,8 +1625,13 @@ function handleDoubleTap(source: InteractionSource): void {
     return;
   }
 
-  if (panel === 'settings') {
-    openHomePanel('settings');
+  if (layoutEditorVisible) {
+    hideLayoutEditor();
+    return;
+  }
+
+  if (idleActionPromptVisible) {
+    hideIdleTimerActionPrompt();
     return;
   }
 
@@ -1478,7 +1647,7 @@ function handleDoubleTap(source: InteractionSource): void {
   }
 
   if (panel === 'timer' && timerState.getState() === TimerState.IDLE) {
-    openHomePanel('timer');
+    openHomePanel();
     return;
   }
 
@@ -1500,28 +1669,53 @@ function handleSwipe(dir: 1 | -1, source: InteractionSource) {
   const panel = effectivePanel();
   pushDetailedLog('[INPUT]', `swipe dir=${dir} accepted panel=${panel} state=${state} source=${source}`);
 
-  if (state === TimerState.RUNNING || state === TimerState.PAUSED) {
-    if (panel !== 'settings' && panel !== 'home') {
-      pushDetailedLog('[INPUT]', `swipe ignored while active panel=${panel} source=${source}`);
+  if (layoutEditorVisible) {
+    if (!canEditLayoutOnGlasses()) {
+      pushDetailedLog('[LAYOUT]', 'swipe ignored layout editor disabled by app-only setting');
+      layoutEditorVisible = false;
+      layoutEditorField = 'format';
+      updateRemoteView();
+      sendToGlassesImmediate('manual');
       return;
     }
-  }
 
-  if (panel === 'home') {
-    homeSelection = homeSelection === 'timer' ? 'settings' : 'timer';
-    pushDetailedLog('[NAV]', `home selection=${homeSelection}`);
+    layoutEditorField = nextGlassesLayoutField(layoutEditorField, dir);
+    pushDetailedLog('[LAYOUT]', `swipe field=${layoutEditorField}`);
     updateRemoteView();
     sendToGlassesImmediate('manual');
     return;
   }
 
-  if (panel === 'settings') {
-    settingsField = dir === 1
-      ? nextTimerLayoutField(settingsField)
-      : previousTimerLayoutField(settingsField);
-    pushDetailedLog('[LAYOUT]', `swipe field=${settingsField}`);
+  if (state === TimerState.RUNNING || state === TimerState.PAUSED) {
+    if (panel === 'timer' && runningActionPromptVisible && !resetConfirmationVisible) {
+      timerActionSelection = timerActionSelection === 'primary' ? 'reset' : 'primary';
+      pushDetailedLog('[NAV]', `timer action selection=${timerActionSelection}`);
+      updateRemoteView();
+      sendToGlassesImmediate('manual');
+      return;
+    }
+
+    if (panel !== 'home') {
+      pushDetailedLog('[INPUT]', `swipe ignored while active panel=${panel} source=${source}`);
+      return;
+    }
+  }
+
+  if (state === TimerState.IDLE && panel === 'timer' && idleActionPromptVisible) {
+    if (!canEditLayoutOnGlasses()) {
+      pushDetailedLog('[NAV]', 'idle timer action swipe ignored layout disabled');
+      return;
+    }
+
+    idleTimerActionSelection = idleTimerActionSelection === 'start' ? 'layout' : 'start';
+    pushDetailedLog('[NAV]', `idle timer action selection=${idleTimerActionSelection}`);
     updateRemoteView();
     sendToGlassesImmediate('manual');
+    return;
+  }
+
+  if (panel === 'home') {
+    pushDetailedLog('[NAV]', 'swipe ignored on home');
     return;
   }
 
@@ -1554,16 +1748,19 @@ function attachTimerStateCallbacks(): void {
 
   timerState.setOnStateChange(() => {
     const state = timerState?.getState();
-    if (state !== TimerState.RUNNING) {
+    if (state === TimerState.RUNNING || state === TimerState.PAUSED) {
+      idleActionPromptVisible = false;
+      idleTimerActionSelection = 'start';
+      layoutEditorVisible = false;
+      layoutEditorField = 'format';
+    } else {
       clearRunningActionPrompt();
     }
     if (state === TimerState.RUNNING && lastKnownTimerState !== TimerState.RUNNING) {
       glassesPanel = 'timer';
-      homeSelection = 'timer';
     }
     if (state === TimerState.DONE) {
       glassesPanel = 'timer';
-      homeSelection = 'timer';
     }
     lastKnownTimerState = state ?? null;
     pushDetailedLog('[CALLBACK]', `onStateChange state=${state} t=${timerState ? formatTime(timerState.getRemainingSeconds()) : '--:--'}`);
@@ -1606,7 +1803,6 @@ async function init() {
       if (restoredLocalTimerSnapshot) {
         timerState.restoreFromSnapshot(restoredLocalTimerSnapshot);
         glassesPanel = timerState.getState() === TimerState.RUNNING ? 'timer' : 'home';
-        homeSelection = 'timer';
         lastKnownTimerState = timerState.getState();
         pushDetailedLog(
           '[STATE]',
@@ -1637,7 +1833,6 @@ async function init() {
     if (restoredTimerSnapshot) {
       timerState.restoreFromSnapshot(restoredTimerSnapshot);
       glassesPanel = timerState.getState() === TimerState.RUNNING ? 'timer' : 'home';
-      homeSelection = 'timer';
       lastKnownTimerState = timerState.getState();
       pushDetailedLog(
         '[STATE]',

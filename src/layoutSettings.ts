@@ -4,7 +4,7 @@ export const TIMER_LAYOUT_FORMATS = ['large', 'compact'] as const;
 export const TIMER_LAYOUT_VERTICALS = ['top', 'mid', 'center'] as const;
 export const TIMER_LAYOUT_HORIZONTALS = ['left', 'center', 'right'] as const;
 export const TIMER_DONE_BLINK_COUNTS = [0, 1, 2, 3, 5, 10] as const;
-export const TIMER_LAYOUT_FIELDS = ['format', 'vertical', 'horizontal', 'doneBlinkCount'] as const;
+export const TIMER_LAYOUT_FIELDS = ['format', 'vertical', 'horizontal', 'doneBlinkCount', 'showLayoutSummaryOnGlasses'] as const;
 
 export type TimerLayoutFormat = typeof TIMER_LAYOUT_FORMATS[number];
 export type TimerLayoutVertical = typeof TIMER_LAYOUT_VERTICALS[number];
@@ -16,6 +16,7 @@ export interface TimerLayoutSettings {
   vertical: TimerLayoutVertical;
   horizontal: TimerLayoutHorizontal;
   doneBlinkCount: number;
+  showLayoutSummaryOnGlasses: boolean;
 }
 
 export interface TimerLayoutMenuState {
@@ -33,6 +34,7 @@ export const DEFAULT_TIMER_LAYOUT_SETTINGS: TimerLayoutSettings = {
   vertical: 'center',
   horizontal: 'center',
   doneBlinkCount: 0,
+  showLayoutSummaryOnGlasses: true,
 };
 
 function isTimerLayoutFormat(value: unknown): value is TimerLayoutFormat {
@@ -57,6 +59,12 @@ function normalizeDoneBlinkCount(value: unknown): number {
   return DEFAULT_TIMER_LAYOUT_SETTINGS.doneBlinkCount;
 }
 
+function normalizeShowLayoutSummaryOnGlasses(value: unknown): boolean {
+  return typeof value === 'boolean'
+    ? value
+    : DEFAULT_TIMER_LAYOUT_SETTINGS.showLayoutSummaryOnGlasses;
+}
+
 function nextInCycle<T extends string | number>(values: readonly T[], current: T, dir: 1 | -1): T {
   const currentIndex = values.indexOf(current);
   const safeIndex = currentIndex >= 0 ? currentIndex : 0;
@@ -72,6 +80,7 @@ export function normalizeTimerLayoutSettings(input: unknown): TimerLayoutSetting
     vertical: isTimerLayoutVertical(candidate.vertical) ? candidate.vertical : DEFAULT_TIMER_LAYOUT_SETTINGS.vertical,
     horizontal: isTimerLayoutHorizontal(candidate.horizontal) ? candidate.horizontal : DEFAULT_TIMER_LAYOUT_SETTINGS.horizontal,
     doneBlinkCount: normalizeDoneBlinkCount(candidate.doneBlinkCount),
+    showLayoutSummaryOnGlasses: normalizeShowLayoutSummaryOnGlasses(candidate.showLayoutSummaryOnGlasses),
   };
 }
 
@@ -79,6 +88,10 @@ export function formatTimerLayoutValue(field: TimerLayoutField, settings: TimerL
   const value = settings[field];
   if (field === 'doneBlinkCount') {
     return value === 0 ? 'Infinite' : `${value}x`;
+  }
+
+  if (field === 'showLayoutSummaryOnGlasses') {
+    return value === true ? 'Visible' : 'App only';
   }
 
   switch (value) {
@@ -135,9 +148,16 @@ export function adjustTimerLayoutSetting(
     };
   }
 
+  if (field === 'doneBlinkCount') {
+    return {
+      ...settings,
+      doneBlinkCount: nextInCycle(TIMER_DONE_BLINK_COUNTS, normalizeDoneBlinkCount(settings.doneBlinkCount), dir),
+    };
+  }
+
   return {
     ...settings,
-    doneBlinkCount: nextInCycle(TIMER_DONE_BLINK_COUNTS, normalizeDoneBlinkCount(settings.doneBlinkCount), dir),
+    showLayoutSummaryOnGlasses: !normalizeShowLayoutSummaryOnGlasses(settings.showLayoutSummaryOnGlasses),
   };
 }
 

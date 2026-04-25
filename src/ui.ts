@@ -10,7 +10,6 @@ import {
 import {
   DEFAULT_TIMER_LAYOUT_SETTINGS,
   formatTimerLayoutValue,
-  type TimerLayoutField,
   type TimerLayoutSettings,
 } from './layoutSettings';
 import {
@@ -37,17 +36,31 @@ interface RenderUiOptions {
   presetMinutes?: number[];
 }
 
-export type GlassesPanel = 'home' | 'timer' | 'settings';
-export type HomeSelection = 'timer' | 'settings';
+export type GlassesPanel = 'home' | 'timer';
+export type TimerActionSelection = 'primary' | 'reset';
+export type IdleTimerActionSelection = 'start' | 'layout';
+export type GlassesLayoutField = 'format' | 'vertical' | 'horizontal' | 'doneBlinkCount';
 
 export interface GlassesNavigationState {
   panel: GlassesPanel;
-  homeSelection: HomeSelection;
-  settingsField: TimerLayoutField;
   runningActionPromptVisible: boolean;
+  timerActionSelection: TimerActionSelection;
+  resetConfirmationVisible: boolean;
+  idleActionPromptVisible: boolean;
+  idleTimerActionSelection: IdleTimerActionSelection;
+  layoutEditorVisible: boolean;
+  layoutEditorField: GlassesLayoutField;
 }
 
-type UiScreenMode = 'home' | 'preset' | 'settings' | 'timer-large' | 'timer-compact' | 'timer-action';
+type UiScreenMode =
+  | 'home'
+  | 'preset'
+  | 'timer-idle-action'
+  | 'timer-layout-editor'
+  | 'timer-large'
+  | 'timer-compact'
+  | 'timer-action'
+  | 'timer-reset-confirm';
 type PixelPattern = number[][];
 
 const DISPLAY_CONTAINER_ID = 1;
@@ -178,15 +191,25 @@ function buildPresetRows(presetMinutes: number[], selectedPreset: number): strin
   return rows;
 }
 
-function buildPresetContent(selectedPreset: number, presetMinutes: number[]): string {
+function buildPresetContent(
+  selectedPreset: number,
+  presetMinutes: number[],
+  layoutSettings: TimerLayoutSettings,
+): string {
   const rows = buildPresetRows(presetMinutes, selectedPreset);
+  const layoutRow = layoutSettings.showLayoutSummaryOnGlasses
+    ? [`Layout ${formatLayoutSummary(layoutSettings)}`]
+    : [];
+  const tapHint = layoutSettings.showLayoutSummaryOnGlasses ? 'Tap: start/layout' : 'Tap: start';
 
   return [
     'Timer',
     `${selectedPreset} min ready`,
+    ...layoutRow,
     ...(rows.length ? rows : ['No shortcuts']),
+    '',
     'Swipe: shortcuts',
-    'Tap: start',
+    tapHint,
     '2Tap: menu',
   ].join('\n');
 }
@@ -199,25 +222,57 @@ function formatLayoutSummary(settings: TimerLayoutSettings): string {
 }
 
 function buildHomeContent(
-  homeSelection: HomeSelection,
   selectedPreset: number,
   layoutSettings: TimerLayoutSettings,
   state: TimerState,
   remainingSeconds: number,
 ): string {
-  const timerLabel = state === TimerState.RUNNING
+  const timerLabel = state === TimerState.RUNNING || state === TimerState.PAUSED
     ? formatTime(remainingSeconds)
     : `${selectedPreset} min`;
-  const primaryHint = 'Tap: open';
-  const secondaryHint = 'Swipe: choose';
+  const layoutRow = layoutSettings.showLayoutSummaryOnGlasses
+    ? [`  ${formatLayoutSummary(layoutSettings)}`]
+    : [];
 
   return [
     'G2 Timer',
-    `${homeSelection === 'timer' ? '>' : ' '} Timer  ${timerLabel}`,
-    `${homeSelection === 'settings' ? '>' : ' '} Layout`,
-    `  ${formatLayoutSummary(layoutSettings)}`,
-    primaryHint,
-    secondaryHint,
+    `> Timer  ${timerLabel}`,
+    ...layoutRow,
+    '',
+    'Tap: open',
+    '2Tap: exit',
+  ].join('\n');
+}
+
+function buildIdleTimerActionContent(
+  selectedPreset: number,
+  layoutSettings: TimerLayoutSettings,
+  selection: IdleTimerActionSelection,
+): string {
+  const layoutRow = layoutSettings.showLayoutSummaryOnGlasses
+    ? [`Layout ${formatLayoutSummary(layoutSettings)}`]
+    : [];
+  const actionRows = layoutSettings.showLayoutSummaryOnGlasses
+    ? [
+      `${selection === 'start' ? '>' : ' '} start`,
+      `${selection === 'layout' ? '>' : ' '} layout`,
+      '',
+      'Swipe: choose',
+      'Tap: confirm',
+      '2Tap: close',
+    ]
+    : [
+      '> start',
+      '',
+      'Tap: confirm',
+      '2Tap: close',
+    ];
+
+  return [
+    'Timer',
+    `${selectedPreset} min ready`,
+    ...layoutRow,
+    ...actionRows,
   ].join('\n');
 }
 
@@ -239,22 +294,38 @@ function buildCompactTimerContent(state: TimerState, remainingSeconds: number, b
   return time;
 }
 
-function buildRunningActionContent(state: TimerState, remainingSeconds: number): string {
+function buildRunningActionContent(
+  state: TimerState,
+  remainingSeconds: number,
+  selection: TimerActionSelection,
+): string {
   const actionLabel = state === TimerState.PAUSED ? 'resume' : 'pause';
   const title = state === TimerState.PAUSED ? 'Timer paused' : 'Timer running';
   return [
     title,
     formatTime(remainingSeconds),
-    `Tap: ${actionLabel}`,
-    '2Tap: menu',
+    `${selection === 'primary' ? '>' : ' '} ${actionLabel}`,
+    `${selection === 'reset' ? '>' : ' '} reset timer`,
+    '',
+    'Swipe: choose',
+    'Tap: confirm',
+    '2Tap: close',
   ].join('\n');
 }
 
-function buildSettingsContent(
-  settingsField: TimerLayoutField,
+function buildResetConfirmationContent(selectedPreset: number): string {
+  return [
+    'Reset timer?',
+    `Back to ${formatTime(selectedPreset * 60)}`,
+    '',
+    'Tap: confirm',
+    '2Tap: cancel',
+  ].join('\n');
+}
+
+function buildLayoutEditorContent(
+  settingsField: GlassesLayoutField,
   layoutSettings: TimerLayoutSettings,
-  state: TimerState,
-  remainingSeconds: number,
 ): string {
   return [
     'Layout',
@@ -262,9 +333,10 @@ function buildSettingsContent(
     `${settingsField === 'vertical' ? '>' : ' '} Vert ${formatTimerLayoutValue('vertical', layoutSettings)}`,
     `${settingsField === 'horizontal' ? '>' : ' '} Horz ${formatTimerLayoutValue('horizontal', layoutSettings)}`,
     `${settingsField === 'doneBlinkCount' ? '>' : ' '} Blink ${formatTimerLayoutValue('doneBlinkCount', layoutSettings)}`,
+    '',
+    'Swipe: field',
     'Tap: change',
-    'Swipe: next field',
-    '2Tap: menu',
+    '2Tap: timer',
   ].join('\n');
 }
 
@@ -448,8 +520,10 @@ function desiredScreenMode(
   layoutSettings: TimerLayoutSettings,
 ): UiScreenMode {
   if (navigation.panel === 'home') return 'home';
-  if (navigation.panel === 'settings') return 'settings';
+  if (navigation.layoutEditorVisible) return 'timer-layout-editor';
+  if (navigation.resetConfirmationVisible) return 'timer-reset-confirm';
   if ((state === TimerState.RUNNING || state === TimerState.PAUSED) && navigation.runningActionPromptVisible) return 'timer-action';
+  if (state === TimerState.IDLE && navigation.idleActionPromptVisible) return 'timer-idle-action';
   if (state === TimerState.IDLE) return 'preset';
   return layoutSettings.format === 'large' ? 'timer-large' : 'timer-compact';
 }
@@ -465,19 +539,27 @@ function buildInitialDisplayContent(
   layoutSettings: TimerLayoutSettings,
 ): string {
   if (screen === 'home') {
-    return buildHomeContent(navigation.homeSelection, selectedPreset, layoutSettings, state, remainingSeconds);
+    return buildHomeContent(selectedPreset, layoutSettings, state, remainingSeconds);
   }
 
   if (screen === 'preset') {
-    return buildPresetContent(selectedPreset, presetMinutes);
+    return buildPresetContent(selectedPreset, presetMinutes, layoutSettings);
   }
 
-  if (screen === 'settings') {
-    return buildSettingsContent(navigation.settingsField, layoutSettings, state, remainingSeconds);
+  if (screen === 'timer-idle-action') {
+    return buildIdleTimerActionContent(selectedPreset, layoutSettings, navigation.idleTimerActionSelection);
+  }
+
+  if (screen === 'timer-layout-editor') {
+    return buildLayoutEditorContent(navigation.layoutEditorField, layoutSettings);
+  }
+
+  if (screen === 'timer-reset-confirm') {
+    return buildResetConfirmationContent(selectedPreset);
   }
 
   if (screen === 'timer-action') {
-    return buildRunningActionContent(state, remainingSeconds);
+    return buildRunningActionContent(state, remainingSeconds, navigation.timerActionSelection);
   }
 
   if (screen === 'timer-compact') {
@@ -725,9 +807,13 @@ export async function renderUI(
   const layoutSettings = options.layoutSettings ?? DEFAULT_TIMER_LAYOUT_SETTINGS;
   const navigation = options.navigation ?? {
     panel: 'home',
-    homeSelection: 'timer',
-    settingsField: 'format',
     runningActionPromptVisible: false,
+    timerActionSelection: 'primary',
+    resetConfirmationVisible: false,
+    idleActionPromptVisible: false,
+    idleTimerActionSelection: 'start',
+    layoutEditorVisible: false,
+    layoutEditorField: 'format',
   };
   const presetMinutes = options.presetMinutes ?? [];
 
@@ -782,9 +868,13 @@ export async function createPageContainers(
   presetMinutes: number[] = [],
   navigation: GlassesNavigationState = {
     panel: 'home',
-    homeSelection: 'timer',
-    settingsField: 'format',
     runningActionPromptVisible: false,
+    timerActionSelection: 'primary',
+    resetConfirmationVisible: false,
+    idleActionPromptVisible: false,
+    idleTimerActionSelection: 'start',
+    layoutEditorVisible: false,
+    layoutEditorField: 'format',
   },
 ): Promise<boolean> {
   if (!bridge) {

@@ -444,6 +444,27 @@
         background: #f0efeb;
       }
 
+      .support-link {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        min-height: 52px;
+        padding: 12px 10px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.82);
+        color: var(--text);
+        text-decoration: none;
+        font-size: 14px;
+        font-weight: 400;
+        transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease, transform 0.08s ease;
+      }
+
+      .support-link:active {
+        transform: scale(0.985);
+      }
+
       .quick-presets {
         display: flex;
         flex-direction: column;
@@ -692,6 +713,81 @@
         border-top: 1px solid var(--border);
       }
 
+      .layout-card-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .layout-card {
+        width: 100%;
+        padding: 16px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.82);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        text-align: left;
+        color: var(--text);
+        transition: border-color 0.15s ease, background 0.15s ease, transform 0.08s ease;
+      }
+
+      .layout-card:active {
+        transform: scale(0.985);
+      }
+
+      .layout-card.active {
+        border-color: var(--accent);
+        background: #f0efeb;
+      }
+
+      .layout-card-meta {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        min-width: 0;
+      }
+
+      .layout-card-label {
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
+        font-size: 10px;
+        color: var(--text-faint);
+      }
+
+      .layout-card-value {
+        font-size: 16px;
+        line-height: 1.2;
+        font-weight: 400;
+        color: var(--text);
+      }
+
+      .layout-card-chevron {
+        font-size: 18px;
+        line-height: 1;
+        color: var(--text-faint);
+      }
+
+      .layout-card:disabled {
+        opacity: 0.45;
+      }
+
+      .layout-detail {
+        display: none;
+        flex-direction: column;
+        gap: 14px;
+        padding: 16px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.64);
+      }
+
+      .layout-detail.active {
+        display: flex;
+      }
+
       .layout-group span {
         display: block;
         margin-bottom: 10px;
@@ -755,7 +851,7 @@
         width: calc(100% - 24px);
         max-width: 406px;
         display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-columns: repeat(4, minmax(0, 1fr));
         gap: 8px;
         padding: 10px;
         border: 1px solid var(--border);
@@ -778,7 +874,7 @@
         justify-content: center;
         gap: 6px;
         text-align: center;
-        font-size: 10px;
+        font-size: 9px;
         letter-spacing: 0.12em;
         text-transform: uppercase;
         padding: 6px 0;
@@ -826,6 +922,83 @@
         display: flex;
         flex-direction: column;
         gap: 20px;
+      }
+
+      .tutorial-stack {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+      }
+
+      .tutorial-intro {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+
+      .gesture-chip-grid,
+      .tutorial-step-grid {
+        display: grid;
+        gap: 10px;
+      }
+
+      .gesture-chip-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .gesture-chip,
+      .tutorial-step {
+        padding: 16px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.82);
+      }
+
+      .gesture-chip {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .gesture-chip strong,
+      .tutorial-step strong {
+        font-size: 16px;
+        line-height: 1.15;
+        font-weight: 400;
+        color: var(--text);
+      }
+
+      .gesture-chip span,
+      .tutorial-step p,
+      .tutorial-note {
+        margin: 0;
+        font-size: 13px;
+        line-height: 1.45;
+        color: var(--text-soft);
+      }
+
+      .tutorial-step-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .tutorial-step {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .tutorial-step-label {
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
+        font-size: 10px;
+        color: var(--text-faint);
+      }
+
+      .tutorial-note {
+        padding: 14px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: rgba(17, 17, 17, 0.03);
       }
 
       .nav-tab.active {
@@ -986,6 +1159,13 @@
             <button type="button" id="dashboard-edit-custom" class="edit-link">Edit</button>
           </div>
 
+          <div class="section">
+            <div class="field-row">
+              <input id="exact-minute-input" type="number" min="1" max="999" inputmode="numeric" placeholder="Exact minutes" />
+              <button type="button" id="apply-minute-btn" class="inline-btn">Apply</button>
+            </div>
+          </div>
+
           <div class="display-bento">
             <div class="display-cell">
               <span class="display-cell-title">Display Size</span>
@@ -1019,13 +1199,6 @@
             </div>
           </div>
 
-          <div class="section">
-            <div class="field-row">
-              <input id="exact-minute-input" type="number" min="1" max="999" inputmode="numeric" placeholder="Exact minutes" />
-              <button type="button" id="apply-minute-btn" class="inline-btn">Apply</button>
-            </div>
-          </div>
-
         </section>
 
         <section class="page" data-page="settings">
@@ -1038,38 +1211,87 @@
                 </div>
               </div>
               <div id="layout-controls" class="section-stack">
-                <div class="layout-group">
-                  <span>Size</span>
-                  <div class="option-grid">
-                    <button type="button" class="layout-btn" data-field="format" data-value="large">Large</button>
-                    <button type="button" class="layout-btn" data-field="format" data-value="compact">Small</button>
+                <div class="layout-card-list">
+                  <button type="button" class="layout-card" data-layout-detail="format">
+                    <span class="layout-card-meta">
+                      <span class="layout-card-label">Size</span>
+                      <strong id="layout-card-format-value" class="layout-card-value">Large</strong>
+                    </span>
+                    <span class="layout-card-chevron" aria-hidden="true">+</span>
+                  </button>
+                  <div class="layout-detail" data-layout-detail-panel="format">
+                    <div class="layout-group">
+                      <span>Size</span>
+                      <div class="option-grid">
+                        <button type="button" class="layout-btn" data-field="format" data-value="large">Large</button>
+                        <button type="button" class="layout-btn" data-field="format" data-value="compact">Small</button>
+                      </div>
+                    </div>
                   </div>
-                </div>
-                <div class="layout-group">
-                  <span>Vertical</span>
-                  <div class="option-grid">
-                    <button type="button" class="layout-btn" data-field="vertical" data-value="top">Top</button>
-                    <button type="button" class="layout-btn" data-field="vertical" data-value="center">Center</button>
-                    <button type="button" class="layout-btn" data-field="vertical" data-value="bottom">Bottom</button>
+
+                  <button type="button" class="layout-card" data-layout-detail="position">
+                    <span class="layout-card-meta">
+                      <span class="layout-card-label">Position</span>
+                      <strong id="layout-card-position-value" class="layout-card-value">Center Right</strong>
+                    </span>
+                    <span class="layout-card-chevron" aria-hidden="true">+</span>
+                  </button>
+                  <div class="layout-detail" data-layout-detail-panel="position">
+                    <div class="layout-group">
+                      <span>Vertical</span>
+                      <div class="option-grid">
+                        <button type="button" class="layout-btn" data-field="vertical" data-value="top">Top</button>
+                        <button type="button" class="layout-btn" data-field="vertical" data-value="center">Center</button>
+                        <button type="button" class="layout-btn" data-field="vertical" data-value="bottom">Bottom</button>
+                      </div>
+                    </div>
+                    <div class="layout-group">
+                      <span>Horizontal</span>
+                      <div class="option-grid">
+                        <button type="button" class="layout-btn" data-field="horizontal" data-value="left">Left</button>
+                        <button type="button" class="layout-btn" data-field="horizontal" data-value="center">Center</button>
+                        <button type="button" class="layout-btn" data-field="horizontal" data-value="right">Right</button>
+                      </div>
+                    </div>
                   </div>
-                </div>
-                <div class="layout-group">
-                  <span>Horizontal</span>
-                  <div class="option-grid">
-                    <button type="button" class="layout-btn" data-field="horizontal" data-value="left">Left</button>
-                    <button type="button" class="layout-btn" data-field="horizontal" data-value="center">Center</button>
-                    <button type="button" class="layout-btn" data-field="horizontal" data-value="right">Right</button>
+
+                  <button type="button" class="layout-card" data-layout-detail="doneBlinkCount">
+                    <span class="layout-card-meta">
+                      <span class="layout-card-label">Blink</span>
+                      <strong id="layout-card-blink-value" class="layout-card-value">Infinite</strong>
+                    </span>
+                    <span class="layout-card-chevron" aria-hidden="true">+</span>
+                  </button>
+                  <div class="layout-detail" data-layout-detail-panel="doneBlinkCount">
+                    <div class="layout-group">
+                      <span>Blink</span>
+                      <div class="option-grid six">
+                        <button type="button" class="layout-btn" data-field="doneBlinkCount" data-value="0">Infinite</button>
+                        <button type="button" class="layout-btn" data-field="doneBlinkCount" data-value="1">1x</button>
+                        <button type="button" class="layout-btn" data-field="doneBlinkCount" data-value="2">2x</button>
+                        <button type="button" class="layout-btn" data-field="doneBlinkCount" data-value="3">3x</button>
+                        <button type="button" class="layout-btn" data-field="doneBlinkCount" data-value="5">5x</button>
+                        <button type="button" class="layout-btn" data-field="doneBlinkCount" data-value="10">10x</button>
+                      </div>
+                    </div>
                   </div>
-                </div>
-                <div class="layout-group">
-                  <span>Blink</span>
-                  <div class="option-grid six">
-                    <button type="button" class="layout-btn" data-field="doneBlinkCount" data-value="0">Infinite</button>
-                    <button type="button" class="layout-btn" data-field="doneBlinkCount" data-value="1">1x</button>
-                    <button type="button" class="layout-btn" data-field="doneBlinkCount" data-value="2">2x</button>
-                    <button type="button" class="layout-btn" data-field="doneBlinkCount" data-value="3">3x</button>
-                    <button type="button" class="layout-btn" data-field="doneBlinkCount" data-value="5">5x</button>
-                    <button type="button" class="layout-btn" data-field="doneBlinkCount" data-value="10">10x</button>
+
+                  <button type="button" class="layout-card" data-layout-detail="showLayoutSummaryOnGlasses">
+                    <span class="layout-card-meta">
+                      <span class="layout-card-label">Glasses layout label</span>
+                      <strong id="layout-card-glasses-label-value" class="layout-card-value">Visible</strong>
+                    </span>
+                    <span class="layout-card-chevron" aria-hidden="true">+</span>
+                  </button>
+                  <div class="layout-detail" data-layout-detail-panel="showLayoutSummaryOnGlasses">
+                    <div class="layout-group">
+                      <span>Glasses layout label</span>
+                      <div class="option-grid">
+                        <button type="button" class="layout-btn" data-field="showLayoutSummaryOnGlasses" data-value="true">Visible</button>
+                        <button type="button" class="layout-btn" data-field="showLayoutSummaryOnGlasses" data-value="false">App only</button>
+                      </div>
+                      <p class="helper-text">Hide the layout summary on glasses and manage it only from the app.</p>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1090,30 +1312,30 @@
                 <p class="helper-text">Comma-separated presets, up to 8 values.</p>
               </div>
             </div>
+
+            <div class="section">
+              <div class="section-header">
+                <div>
+                  <span class="eyebrow">Support</span>
+                  <h2>Donate</h2>
+                </div>
+              </div>
+              <div class="section-stack">
+                <a
+                  class="support-link"
+                  href="https://paypal.me/giovanni2799"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Donate with PayPal
+                </a>
+                <p class="helper-text">If the app is useful, you can support development directly via PayPal.</p>
+              </div>
+            </div>
           </div>
         </section>
 
         <section class="page" data-page="advanced">
-          <div class="section">
-            <div class="section-header">
-              <div>
-                <span class="eyebrow">Advanced</span>
-                <h2>Glasses view</h2>
-              </div>
-            </div>
-            <p id="glasses-view-summary" class="section-copy">Connecting...</p>
-            <div id="remote-screen-buttons" class="screen-grid">
-              <button type="button" class="screen-btn" data-screen="home">Menu</button>
-              <button type="button" class="screen-btn" data-screen="timer">Timer</button>
-              <button type="button" class="screen-btn" data-screen="settings">Settings</button>
-            </div>
-            <div class="glasses-summary">
-              <span class="micro-label">Gesture map</span>
-              <strong id="phone-gesture-title">Ready when connected</strong>
-              <p id="remote-gesture-help" class="section-copy">Glasses controls load after connection.</p>
-            </div>
-          </div>
-
           <div class="section telemetry-card">
             <div class="section-header">
               <div>
@@ -1123,6 +1345,103 @@
             </div>
             <div id="telemetry-summary">Waiting for samples...</div>
             <pre id="telemetry-log">No render samples yet.</pre>
+          </div>
+        </section>
+
+        <section class="page" data-page="tutorial">
+          <div class="tutorial-stack">
+            <div class="section">
+              <div class="section-header">
+                <div>
+                  <span class="eyebrow">Tutorial</span>
+                  <h2>How it works</h2>
+                </div>
+              </div>
+              <div class="tutorial-intro">
+                <p class="section-copy">A quick guide to control the timer from the glasses, including start, pause, reset, layout editing, and the meaning of each gesture.</p>
+                <div class="gesture-chip-grid">
+                  <div class="gesture-chip">
+                    <strong>Tap</strong>
+                    <span>Open, confirm, start, pause, resume, or change the selected layout value.</span>
+                  </div>
+                  <div class="gesture-chip">
+                    <strong>Double tap</strong>
+                    <span>Go back, close a prompt, cancel a reset confirmation, or exit from Home.</span>
+                  </div>
+                  <div class="gesture-chip">
+                    <strong>Swipe</strong>
+                    <span>Change preset shortcuts, move across action choices, or move between layout fields.</span>
+                  </div>
+                  <div class="gesture-chip">
+                    <strong>App only</strong>
+                    <span>If the glasses layout label is set to <em>App only</em>, layout changes stay available only on the phone.</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="section">
+              <div class="section-header">
+                <div>
+                  <span class="eyebrow">Tutorial</span>
+                  <h2>Main flows</h2>
+                </div>
+              </div>
+              <div class="tutorial-step-grid">
+                <div class="tutorial-step">
+                  <span class="tutorial-step-label">Start</span>
+                  <strong>Start a timer</strong>
+                  <p>Open <em>Timer</em> on the glasses, swipe to pick a preset, then tap. If layout editing is enabled on the glasses, tap opens a small menu where you choose <em>Start</em> or <em>Layout</em>. If layout editing is disabled, tap starts the timer immediately.</p>
+                </div>
+                <div class="tutorial-step">
+                  <span class="tutorial-step-label">Pause</span>
+                  <strong>Pause and resume</strong>
+                  <p>While the timer is running, tap to open the action menu. Swipe to keep <em>Pause</em> selected and tap to confirm. When paused, tap again to open actions and confirm <em>Resume</em>.</p>
+                </div>
+                <div class="tutorial-step">
+                  <span class="tutorial-step-label">Reset</span>
+                  <strong>Reset safely</strong>
+                  <p>From the running or paused action menu, swipe to <em>Reset timer</em> and tap. A confirmation screen appears. Tap again to reset, or double tap to cancel.</p>
+                </div>
+                <div class="tutorial-step">
+                  <span class="tutorial-step-label">Layout</span>
+                  <strong>Change layout on the glasses</strong>
+                  <p>If allowed by the phone setting, open <em>Timer</em>, tap, choose <em>Layout</em>, then swipe between fields and tap to change each value. Double tap returns to the timer screen.</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="section">
+              <div class="section-header">
+                <div>
+                  <span class="eyebrow">Tutorial</span>
+                  <h2>Gesture map</h2>
+                </div>
+              </div>
+              <div class="tutorial-step-grid">
+                <div class="tutorial-step">
+                  <span class="tutorial-step-label">Home</span>
+                  <strong>Enter the timer</strong>
+                  <p>From the glasses home screen, tap to open <em>Timer</em>. Double tap exits the app.</p>
+                </div>
+                <div class="tutorial-step">
+                  <span class="tutorial-step-label">Idle</span>
+                  <strong>Choose the preset</strong>
+                  <p>Swipe cycles through the preset shortcuts. Tap opens the next action. Double tap goes back to the glasses home screen.</p>
+                </div>
+                <div class="tutorial-step">
+                  <span class="tutorial-step-label">Running</span>
+                  <strong>Open timer actions</strong>
+                  <p>Tap opens the action menu. Swipe switches between available actions. Double tap closes the action menu or returns to the dashboard, depending on the current screen.</p>
+                </div>
+                <div class="tutorial-step">
+                  <span class="tutorial-step-label">Done</span>
+                  <strong>After completion</strong>
+                  <p>When the timer reaches zero, tap resets it back to the selected preset so you can start again quickly.</p>
+                </div>
+              </div>
+              <p class="tutorial-note">Tip: if you want the cleanest possible glasses UI, set <em>Glasses layout label</em> to <em>App only</em> in phone settings. In that mode the layout stays editable only from the app.</p>
+            </div>
           </div>
         </section>
       </main>
@@ -1168,6 +1487,17 @@
         </span>
         <span>Settings</span>
       </button>
+      <button type="button" class="nav-tab" data-page-target="tutorial">
+        <span class="nav-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M6 4.5h9a3 3 0 0 1 3 3V19.5H9a3 3 0 0 0-3 3z"></path>
+            <path d="M6 4.5v18"></path>
+            <path d="M10 8h4"></path>
+            <path d="M10 11h4"></path>
+          </svg>
+        </span>
+        <span>Tutorial</span>
+      </button>
       <button type="button" class="nav-tab" data-page-target="advanced">
         <span class="nav-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -1178,7 +1508,7 @@
             <circle cx="12" cy="12" r="2.5"></circle>
           </svg>
         </span>
-        <span>Avanzate</span>
+        <span>Advanced</span>
       </button>
     </nav>
 
