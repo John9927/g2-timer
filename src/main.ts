@@ -1276,6 +1276,13 @@ function setupRemoteControl() {
 // â”€â”€ Swipe throttling â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let lastSwipeTime = 0;
 const SWIPE_COOLDOWN_MS = 300;
+let ignoreGlassesDoubleTapUntil = 0;
+const DOUBLE_TAP_DEDUP_MS = 450;
+
+function suppressDuplicateGlassesDoubleTap(reason: string): void {
+  ignoreGlassesDoubleTapUntil = Date.now() + DOUBLE_TAP_DEDUP_MS;
+  pushDetailedLog('[INPUT]', `doubleTap dedup armed reason=${reason} until=${ignoreGlassesDoubleTapUntil}`);
+}
 
 // â”€â”€ Event handlers for glasses â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function syncPageVisibility(nextVisible: boolean): void {
@@ -1572,6 +1579,12 @@ function handleSingleTap(source: InteractionSource) {
 
 function handleDoubleTap(source: InteractionSource): void {
   if (!timerState || !bridge) return;
+  const now = Date.now();
+  if (source === 'glasses' && now < ignoreGlassesDoubleTapUntil) {
+    pushDetailedLog('[INPUT]', `doubleTap ignored duplicate now=${now} until=${ignoreGlassesDoubleTapUntil}`);
+    return;
+  }
+
   const state = timerState.getState();
   const panel = effectivePanel();
   pushDetailedLog('[INPUT]', `doubleTap panel=${panel} state=${state} source=${source}`);
@@ -1583,11 +1596,13 @@ function handleDoubleTap(source: InteractionSource): void {
     }
 
     if (resetConfirmationVisible) {
+      suppressDuplicateGlassesDoubleTap('close-reset-confirmation-running');
       hideResetConfirmationPrompt();
       return;
     }
 
     if (runningActionPromptVisible) {
+      suppressDuplicateGlassesDoubleTap('close-running-actions');
       clearRunningActionPrompt();
       updateRemoteView();
       sendToGlassesImmediate('manual');
@@ -1609,11 +1624,13 @@ function handleDoubleTap(source: InteractionSource): void {
     }
 
     if (resetConfirmationVisible) {
+      suppressDuplicateGlassesDoubleTap('close-reset-confirmation-paused');
       hideResetConfirmationPrompt();
       return;
     }
 
     if (runningActionPromptVisible) {
+      suppressDuplicateGlassesDoubleTap('close-paused-actions');
       clearRunningActionPrompt();
       updateRemoteView();
       sendToGlassesImmediate('manual');
@@ -1626,11 +1643,13 @@ function handleDoubleTap(source: InteractionSource): void {
   }
 
   if (layoutEditorVisible) {
+    suppressDuplicateGlassesDoubleTap('close-layout-editor');
     hideLayoutEditor();
     return;
   }
 
   if (idleActionPromptVisible) {
+    suppressDuplicateGlassesDoubleTap('close-idle-actions');
     hideIdleTimerActionPrompt();
     return;
   }
